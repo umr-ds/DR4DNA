@@ -6,8 +6,8 @@ However, the concept behind this tool could be used for any fountain-code based 
 # Install:
 
 ```
-git clone git@github.com:thejanky/NOREC4DNA_SAR.git --recurse-submodules
-cd NOREC4DNA_SAR
+git clone git@github.com:thejanky/DR4DNA.git --recurse-submodules
+cd DR4DNA
 pip install -r requirements.txt
 ```
 
@@ -22,16 +22,16 @@ controlled using a browser.
 
 # Usage:
 
-SAIR-DNA Control Overview:
+DR4DNA Control Overview:
 ![overview.png](documentation/overview.png)
-The first line displays the most current information from SAIR-DNA.
+The first line displays the most current information from DR4DNA.
 Following right below is the MAGIC information about the decoded data. This gives an indication to which filetype was
 encoded and if the file header is correct.
 
 The third row contains the list of possible invalid packets as calculated from the tagged rows.
 
 Switch to select single or multiple error detection mode.
-By default, SAIR-DNA assumes only a single corrupt packet is corrupt. Switching to multiple error mode typically
+By default, DR4DNA assumes only a single corrupt packet is corrupt. Switching to multiple error mode typically
 requires more known data
 
 ![single_multiple.png](documentation/single_multiple.png)
@@ -95,7 +95,7 @@ wishes to repair and pressing "_Open repair window_".
 ## Plugins:
 
 #### Plugin loading:
-SAIR-DNA uses a plugin system to allow the user to define custom repair methods. 
+DR4DNA uses a plugin system to allow the user to define custom repair methods. 
 Correct plugins inside the `repair_algorithms` folder will be automatically loaded at launch. A plugin will be loaded if its is_compatible method returns `True`.
 Typically, this is done by checking the results of the magic check or by checking the file extension. (If a header chunk is present)
 
@@ -135,7 +135,7 @@ Allowing for an interactive tagging of corrupt chunks / the exact position in th
 While we recommend using external tools to correct single errors and upload the repaired version, using the canvas together with the "_Find incorrect positions_" can be a fast way to find the corrupt packet.
 - "_Download Data_" will download the current data as a bmp file. The header data might be changed as the kaitaistruct parser tried to repair certain datapoints to correctly parse the file.
 - "_Show KaitaiStruct" displays a structured view of the bmp file header including the start + end positions for each field.
-- "_Width / Height of the image_" can be used to manually fix the width and height of the image. This can be useful if an error corrupted the appropriate fields in the header. SAIR-DNA will make sure that the aspect ratio results in all pixels being used (and the length of the file will be correct!)
+- "_Width / Height of the image_" can be used to manually fix the width and height of the image. This can be useful if an error corrupted the appropriate fields in the header. DR4DNA will make sure that the aspect ratio results in all pixels being used (and the length of the file will be correct!)
 - "Drag and Drop or Select Files": A partially (manually) repaired file (e.g. using "_Download Data_" and Photoshop) can be uploaded. This plugin will then calculate the corrupt packet and error delta and will thus automatically repair the full image.
 - "_Find incorrect positions_": This will calculate the (possibly) corrupt packet(s) based on the marked areas in the canvas. Any affected chunk will be tagged accordingly.
 - "_Tag (in)correct columns_": This will tag the incorrect columns, counting any errors in the columns. This will give an indication to where inside the packet an error occurred.
@@ -170,7 +170,7 @@ Using enough of these information, the corrupt packet can be identified.
 #### UploadRepair:
 Just as described for the BMP based plugins, this plugin can be used to upload a repaired version of the file.
 This more general approach allows the use of external forensics tools to partially repair a corrupt file, 
-upload it to SAIR-DNA and let the tool calculate the corrupt packet and error delta to automatically repair any still existing errors.
+upload it to DR4DNA and let the tool calculate the corrupt packet and error delta to automatically repair any still existing errors.
 
 Any changed byte will be marked as an error and tag the corresponding chunk as corrupt. If enough of the file is changed, the corrupt packet can be identified.
 If the changed bytes in the file do not all have the same delta (for an error in the same column), the most common error delta will be used.

@@ -109,8 +109,8 @@ def init_globals(semi_automatic_solver):
                               id={'type': 'e_row', 'index': i}, className="entry_row"))
     app.layout = html.Div(children=[dcc.Interval(id='interval-component', interval=1 * 1000,  # in milliseconds
                                                  n_intervals=0),
-                                    # Genereic overfiew:
-                                    html.H1(children='SAIR-NOREC4DNA', id="analytics-input"),
+                                    # Genereic overview:
+                                    html.H1(children='DR4DNA', id="analytics-input"),
                                     html.H3(children=semi_automatic_solver.predict_file_type(), id="analytics-output"),
                                     html.H3(children="Possible invalid packets:", id="analyze-count-output",
                                             className="box"),
