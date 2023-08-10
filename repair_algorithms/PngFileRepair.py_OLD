@@ -1,0 +1,118 @@
+# https://ide.kaitai.io/
+# https://kaitai.io/
+
+# pylint: disable=invalid-name,missing-docstring,too-many-public-methods
+# pylint: disable=useless-object-inheritance,super-with-arguments,consider-using-f-string
+# pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements
+import io
+import lzma
+import zlib
+
+import numpy as np
+from kaitaistruct import ValidationNotEqualError
+
+from repair_algorithms.PluginManager import PluginManager
+from repair_algorithms.FileSpecificRepair import FileSpecificRepair
+
+import norec4dna.GEPP
+
+from repair_algorithms.png import Png
+from repair_algorithms.zip import Zip
+
+
+class PngFileRepair(FileSpecificRepair):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.png_structure = None
+        self.error_matrix = None
+
+    def parse_pngfile(self):
+        start = 1 if self.use_header_chunk else 0
+        last_chunk_garbage = self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+        # try to parse the zipfile:
+        png_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(-1)[
+                              :-last_chunk_garbage].tobytes()
+        #while True:
+        #    try:
+        res = Png.from_bytes(png_bytes)
+        return res
+        #    except ValidationNotEqualError as err:
+        #        # if magic bytes are wrong:
+        #        if err.src_path == "/types/pk_section/seq/0":
+        #            # replace magic bytes with correct ones:
+        #            png_bytes = png_bytes[:err.io.pos()] + err.expected + png_bytes[err.io.pos() + len(err.expected):]
+        #            res = None
+
+    def is_compatible(self, meta_info):
+        # parse magic info string:
+        return "png" in meta_info.lower()  # TODO check...
+
+    def repair(self, *args, **kwargs):
+        if self.png_structure is None:
+            self.png_structure = self.parse_pngfile()
+        start = 1 if self.use_header_chunk else 0
+        last_chunk_garbage = self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+        tmp = Png.from_bytes(self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(-1)[
+                             :-last_chunk_garbage].tobytes())
+        return tmp
+
+    def find_error_region(self, *args, **kwargs):
+        start = 1 if self.use_header_chunk else 0
+        error_pos = [-1 for _ in
+                     range(len(self.gepp.b[start:].reshape(-1)))]  # -1 <= unknown, 0 == correct, >=1 = incorrect
+        if self.png_structure is None:
+            self.png_structure = self.parse_pngfile()
+
+        if start:
+            error_pos = [-1] * self.gepp.b.shape[1] + error_pos
+        # for rows with only some columns == -1 and the rest == 0:
+        # check if there are still possible packets if we would tag this row as incorrect together with all row that are already tagged incorrect
+        # additionally we could do the same for correct rows and treating the row as correct and check if there is a solution together with all other fully correct or incorrect rows...
+        return np.array(error_pos).reshape(-1, self.gepp.b.shape[1])
+
+    def get_ui_elements(self):
+        return {"txt-pngfile-analyze-row-count": {"type": "int", "text": "Number of rows to analyze",
+                                                  "callback": self.set_no_inspect_chunks},
+                "btn-pngfile-find-rows": {"type": "button", "text": "Tag (in)correct rows",
+                                          "callback": self.find_correct_rows, "updates_b": True},
+                "btn-pngfile-find-columns": {"type": "button", "text": "Tag (in)correct columns",
+                                             "callback": self.find_incorrect_columns, "updates_b": True},
+                "btn-pngfile-repair": {"type": "button", "text": "Repair", "callback": self.repair,
+                                       "updates_b": True}}
+
+    def find_correct_rows(self, *args, **kwargs):
+        if kwargs is None or kwargs.get("chunk_tag") is None:
+            self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
+        else:
+            self.chunk_tag = kwargs.get("chunk_tag")
+
+        res = []
+        if self.error_matrix is None:
+            self.error_matrix = self.find_error_region(*args, **kwargs)
+        # for each row: count all entrys != 0
+        for i in range(len(self.error_matrix)):
+            res.append(np.sum(self.error_matrix[i, :]) == 0)
+        for i in range(min(len(self.chunk_tag), len(res))):
+            if res[i]:
+                self.chunk_tag[i] = 2
+        return {"chunk_tag": self.chunk_tag, "updates_b": False, "refresh_view": True}
+
+    # parse each section in the zip file:
+    # if the section is a local file header, check the crc32
+
+    def find_incorrect_columns(self, *args, **kwargs):
+        pass
+
+    def set_no_inspect_chunks(self, no_inspect_chunks):
+        pass
+
+    def update_gepp(self, gepp):
+        # update
+        self.png_structure = self.parse_pngfile()
+
+    def update_chunk_tag(self, chunk_tag):
+        pass
+
+
+mgr = PluginManager()
+mgr.register_plugin(PngFileRepair)

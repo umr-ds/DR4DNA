@@ -1,0 +1,18 @@
+<!-- templates/index.html -->
+
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="content is-centered">
+        <figure class="is-centered">
+                <img style="height: 100px" src="{{ url_for('static',filename='img/logo_mosla_rgb.png') }}"
+                     alt="mosla.de"/>
+        </figure>
+    </div>
+    <h1 class="title">
+        DNA synthesis, storage and  sequencing simulator
+    </h1>
+    <h2 class="subtitle">
+        Easy and extensible DNA simulation at your hands.
+    </h2>
+{% endblock %}

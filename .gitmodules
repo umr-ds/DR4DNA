@@ -1,0 +1,3 @@
+[submodule "NOREC4DNA"]
+	path = NOREC4DNA
+	url = git@github.com:umr-ds/NOREC4DNA.git

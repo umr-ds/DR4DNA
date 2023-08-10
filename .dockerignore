@@ -1,0 +1,8 @@
+**/venv
+**/*.egg-info
+dist
+build
+.eggs
+.sonarlint
+analysis
+venv_text

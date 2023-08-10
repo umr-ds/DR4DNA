@@ -1,0 +1,189 @@
+import multiprocessing
+import re
+
+import norec4dna.GEPP
+import numpy as np
+from repair_algorithms.FileSpecificRepair import FileSpecificRepair
+from googletrans import Translator
+#import nltk
+#import language_tool_python
+#tool = language_tool_python.LanguageTool('auto', config={'disabledRuleIds': "UPPERCASE_SENTENCE_START"})
+from spellchecker import SpellChecker
+from collections import Counter
+from Levenshtein import distance as levenshtein_distance
+
+# nltk.download('all')
+from repair_algorithms.PluginManager import PluginManager
+
+#np.set_printoptions(threshold=np.inf)
+
+
+class RawTextRepair(FileSpecificRepair):
+    def __init__(self, gepp: norec4dna.GEPP, use_header: bool = True, *args, **kwargs):
+        super().__init__(gepp, *args, **kwargs)
+        self.error_matrix = None
+        self.use_header_chunk = use_header
+        self.no_inspect_chunks = self.gepp.b.shape[0]
+
+    def set_use_header(self, use_header):
+        self.use_header_chunk = use_header
+
+    def set_no_inspect_chunks(self, no_inspect_chunks, *args, **kwargs):
+        self.no_inspect_chunks = no_inspect_chunks
+        return {"updates_b": False}
+
+    @staticmethod
+    def filter_nonprintable(text):
+        import itertools
+        # Use characters of control category
+        nonprintable = itertools.chain(range(0x00, 0x20), range(0x7f, 0xa0))
+        # Use translate to remove all non - printable characters
+        return text.translate({character: None for character in nonprintable})
+
+    def detect_language(self, *args, **kwargs):
+        translator = Translator()
+        start_pos = 1 if self.use_header_chunk else 0
+        x = translator.detect(RawTextRepair.filter_nonprintable(
+            "".join([chr(x) for x in self.gepp.b[start_pos:, :].reshape(-1)[self.gepp.b.shape[1]:1000]])))
+        return x
+        # ( https://github.com/chenterry85/Language-Detection )
+
+    def find_error_region(self, language="en", *args, **kwargs):
+        return self.find_error_region_by_words(*args, language, **kwargs)
+        # TO DO: compare file / chunk distribution of each character with the distribution of the selected language
+        # ( https://en.wikipedia.org/wiki/Letter_frequency )
+        # iterate over all positions in a chunks
+        # for i in range(len(self.gepp.b[0])):
+        #    # iterate over all chunks
+        #    for j in range(len(self.gepp.b)):
+        ## count the number of occurrences of each character
+        # pass
+
+    def find_error_region_by_words(self, language='en', *args, **kwargs):
+        # use a language dictonary to find incorrect words per chunk and find the most likely position of the error
+        # accross multiple chunks (pin down the position of the error)
+
+        # WARNING: this method is rather slow but will yield better results than the character based method
+        # IF the words stored in the file are in the used dictionary
+        #
+        # translator = Translator()
+        spell = SpellChecker(language=language, distance=2)
+        # print(translator.detect(self.gepp.b.reshape(-1)))
+        possible_locations = []
+        # for i in range(len(self.gepp.b)):
+        # iterate over all chunks
+        start_pos = 1 if self.use_header_chunk else 0
+        blob = "".join(
+            [chr(x) for x in
+             self.gepp.b[start_pos:, :].reshape(-1)[
+             self.gepp.b.shape[1]:self.no_inspect_chunks * self.gepp.b.shape[1]]])
+        # print(blob.correct())
+        pos_correct = np.zeros(len(blob) + 1, dtype=np.float32)
+        pos = 0
+        for token in [x for x in re.sub(r'[^\w\s]', ' ', blob).split(" ")]:
+            # TODO: we might want to use spell.candidates(token) to get a list of possible corrections
+            # and find the most likely one with the same length.
+
+            correction = spell.correction(token)
+
+            # todo: we might want to look into different len case:
+            if correction is None or len(correction) != len(token):
+                # token is not a valid word and cant be corrected to one:
+                candidates = spell.candidates(token)
+                if candidates is not None and len(candidates) > 0:
+                    possible_substitutions = [x for x in candidates if len(x) == len(token)]
+                    if len(possible_substitutions) == 0:
+                        # no possible substitution found
+                        pos_correct[pos:pos + len(token)] = 0.5
+                    else:
+                        correction = \
+                            sorted(possible_substitutions, key=lambda x: levenshtein_distance(x, token), reverse=True)[
+                                0]
+                        pos_correct[pos:pos + len(token)] = np.array(
+                            [(ord(a) ^ ord(b)) for a, b in zip(token, correction)])
+                else:
+                    # no possible correction found
+                    pos_correct[pos:pos + len(token)] = 0.5
+            elif correction == token:
+                pass  # token is correct
+            else:
+                pos_correct[pos:pos + len(token)] = np.array([(ord(a) ^ ord(b)) for a, b in zip(token, correction)])
+            pos += len(token) + 1
+        pos_correct = pos_correct[:-1]  # remove last " " because tokens are not seperated by spaces...
+        pos_correct = np.array(pos_correct).reshape(-1, self.gepp.b.shape[1])
+        # possible_locations = np.array([(ord(a) ^ ord(b)) for a,b in zip(blob.correct().raw, blob.raw)])
+        # TODO make sure the length of blob.correct matches the raw blob ( we can NOT have any words with different length...)
+        # possible_locations.reshape(self.gepp.b.shape[1], -1)
+        print(pos_correct)
+        return pos_correct
+
+    def find_incorrect_rows(self, *args, **kwargs):
+        # TODO: we might want to apply a more sopisticated approach finding all row
+        # that have the most common diff at the most common column(s)
+        return [not x for x in self.find_correct_rows(args, kwargs)]
+
+    def find_correct_rows(self, *args, **kwargs):
+        # all rows with no errors according to the spellchecker are treated as correct!
+        res = []
+        if self.error_matrix is None:
+            self.error_matrix = self.find_error_region(*args, **kwargs)
+        # for each row: count all entrys != 0
+        for i in range(len(self.error_matrix)):
+            res.append(np.sum(self.error_matrix[i, :]) == 0)
+        # build chunk_tag:
+        chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
+        for i in range(min(len(chunk_tag), len(res))):
+            chunk_tag[i] = 1 if res[i] else 0
+        return {"chunk_tag": chunk_tag, "updates_b": True}
+
+    def find_incorrect_columns(self, *args, **kwargs):
+        pass
+
+    def get_column_counter(self, *args, **kwargs):
+        if self.error_matrix is None:
+            self.error_matrix = self.find_error_region(*args, **kwargs)
+        avg_errors = []
+        row_counters = []
+        for i in range(self.gepp.b.shape[0]):
+            avg_errors.append(np.mean(self.error_matrix[:, i]))
+        for i in range(self.gepp.b.shape[0]):
+            avg_error = np.mean(self.error_matrix[:, i])
+            ctr = Counter(self.error_matrix[:, i])
+            row_counters.append(ctr)
+        #    for key, value in ctr.items():
+        #        pass
+        return row_counters
+
+    def repair(self, *args, **kwargs):
+        # TODO we can see which characters are over / underrepresented in the file
+        # (and which positions have the highest distance with respect to the distribution)
+        # additionally, we can use quadgrams ( http://practicalcryptography.com/cryptanalysis/text-characterisation/quadgrams/ )
+        # to analyze the fittness of a possible solution
+
+        # repair column j:
+        # use the _most common_ difference (Counter of error_matrix[:,j]) and XOR
+        # apply it to the most likely row (we want to avoid using multiple rows, because otherwise
+        # this approach might incorrectly repair a row and propagate this error to other rows)
+        # instead we can repair a single row and propagate the changes via GEPP / belief propagation...
+        # however: THIS _MIGHT_ LIMIT THE PROCESS TO A SINGLE DEFECTIVE PACKET!
+
+        # np.bitwise_xor(self.gepp.b[i,j], most_common_difference[i])
+
+        pass
+
+    def is_compatible(self, meta_info):
+        # TODO: check if file is a text file...
+        return False
+
+    def get_ui_elements(self):
+        return {"txt-textfile-analyze-row-count": {"type": "int", "text": "Number of rows to analyze",
+                                                   "callback": self.set_no_inspect_chunks},
+                "btn-textfile-find-rows": {"type": "button", "text": "Tag (in)correct rows",
+                                           "callback": self.find_correct_rows, "updates_b": True},
+                "btn-textfile-find-columns": {"type": "button", "text": "Tag (in)correct columns",
+                                              "callback": self.find_incorrect_columns, "updates_b": True},
+                "btn-textfile-repair": {"type": "button", "text": "Repair", "callback": self.repair, "updates_b": True}}
+
+
+mgr = PluginManager()
+mgr.register_plugin(RawTextRepair)

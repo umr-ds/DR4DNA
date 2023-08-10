@@ -1,0 +1,230 @@
+{% set version = '1.0.2' %}
+<!DOCTYPE html>
+<!--<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN">-->
+<!-- <html lang="en" {% if session.get('darkmode') == True %}data-theme="dark"{% endif %}>-->
+<head>
+    <title>{% block title %}MESA DNA Simulator{% endblock %}</title>
+    {% block head %}
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="Description" content="MESA: automated assessment of synthetic DNA fragments and simulation of DNA synthesis, storage, sequencing, and PCR errors">
+
+        <link rel="icon" href="{{ url_for('static',filename='img/mosla_fav-150x150.png') }}" sizes="32x32"/>
+        <link rel="icon" href="{{ url_for('static',filename='img/mosla_fav-300x300.png') }}" sizes="192x192"/>
+        <link rel="apple-touch-icon-precomposed" href="{{ url_for('static',filename='img/mosla_fav-300x300.png') }}"/>
+        <meta name="msapplication-TileImage" content="{{ url_for('static',filename='img/mosla_fav-300x300.png') }}"/>
+        {% if config['DEBUG'] or config['TESTING'] %}
+            <link rel="stylesheet" href="{{ url_for('static',filename='styles/gh-fork-ribbon.css') }}" />
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/bulma.min.css') }}>
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/infobox.css') }}>
+            <link rel="stylesheet" type="text/css"
+                  href={{ url_for('static',filename='styles/bootstrap-float-label.min.css') }}>
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/balloon.min.css') }}>
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/Chart.min.css') }}>
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/overlay.css') }}>
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/nouislider.css') }}>
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/bulma-divider.min.css') }}>
+
+            <script defer src="{{ url_for('static',filename='js/fontawesome.min.js') }}"></script>
+        {% else %}
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/all.min.css') + '?v=' + version }}>
+        {% endif %}
+        {%  if "msie" == request.user_agent.browser or "Trident/" in request.user_agent.string or "MSIE " in request.user_agent.string %}
+            <link rel="stylesheet" type="text/css" href={{ url_for('static',filename='styles/ie.css') }}>
+        {%  endif %}
+    {% endblock %}
+</head>
+
+<body>
+<section class="hero is-light is-fullheight">
+    <div class="hero-head">
+        <nav class="navbar" role="navigation" aria-label="main navigation">
+            <div class="navbar-brand">
+                <a class="navbar-item" href="{{ url_for('main_page.main_index') }}" aria-label="MOSLA Image"
+                   style="font-weight:bold;">
+                    <img src="{{ url_for('static',filename='img/header_logo_sm.png') }}" width="117" height="28"
+                         alt="MOSLA"/>
+                </a>
+                <a role="button" class="navbar-burger burger" aria-label="menu" aria-expanded="false"
+                   data-target="navMenu">
+                    <span aria-hidden="true"></span>
+                    <span aria-hidden="true"></span>
+                    <span aria-hidden="true"></span>
+                </a>
+            </div>
+            <div id="navbarMenuHeroA" class="navbar-menu">
+                <div class="navbar-start"></div>
+                <div class="navbar-end">
+                    <a href="{{ url_for('main_page.main_index') }}" aria-label="Home Page"
+                       class="navbar-item is-black"> Home </a>
+
+                </div>
+            </div>
+        </nav>
+    </div>
+    {%  if "msie" == request.user_agent.browser or "Trident/" in request.user_agent.string or "MSIE " in request.user_agent.string %}
+        <div class="warning">You are using an outdated Browser! This might decrease the performance and affect general usability.</div>
+    {% endif %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <ul>
+                {% for category, message in messages %}
+                    <div class="{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% endwith %}
+    <ul>
+        <div class="limit_char" style="display:none" id="limit_1">The sequence is longer than 1.000 bases. Max. Expect is unchecked now and your results will be sent to your E-Mail.</div>
+    </ul>
+    <ul>
+        <div class="limit_char" style="display:none" id="limit_2">The sequence is longer than 4.000 bases. Max. Expect is disabled now and your results will be sent to your E-Mail. </div>
+    </ul>
+    <ul>
+        <div class="fasta" style="display:none" id="fasta_inf">FASTA file loaded. Max. Expect is unchecked now and the results will be sent to your E-Mail</div>
+    </ul>
+    <div class="hero-body" id="main-body">
+        <div class="container has-text-centered">
+            <div class="container has-text-centered" id="error-container">
+            </div>
+            {% block content %}
+            {% endblock %}
+        </div>
+    </div>
+    <footer class="footer" style="border-top: 3px solid #ad9843; padding-bottom: 9px;">
+        {% block footer %}
+            <a class="github-fork-ribbon left-bottom bottom" id="fork-me-ribbon" href="https://github.com/umr-ds/mesa_dna_sim" data-ribbon="Fork me on GitHub" title="Fork me on GitHub">Fork me on GitHub</a>
+            <div class="content has-text-centered">
+                <div class="content is-small is-text copyright" style="color: black"><a href="{{ url_for('main_page.impressum') }}" style="color: #ad9843">Disclosure </a>| © 2019 MOSLA</div>
+                <div class="columns is-centered no-margin-bottom">
+                    <div class="column content is-centered is-3 no-margin-bottom">
+                        <figure class="is-centered">
+                            <img style="height: 60px; min-width:174px"
+                                 src="{{ url_for('static',filename='img/umr.png') }}"
+                                 alt="uni-marburg.de"/>
+                        </figure>
+                    </div>
+                    <div class="column content is-centered is-3 no-margin-bottom">
+                        <figure class="is-centered">
+                            <img style="height: 60px; min-width:166px"
+                                 src="{{ url_for('static',filename='img/jlu.png') }}"
+                                 alt="uni-marburg.de"/>
+                        </figure>
+                    </div>
+                    <div class="column content is-centered is-3 no-margin-bottom">
+                        <figure class="is-centered">
+                            <img style="height: 60px; min-width:147px"
+                                 src="{{ url_for('static',filename='img/loewe.png') }}"
+                                 alt="proloewe.de; min-width:145px"/>
+                        </figure>
+                    </div>
+                </div>
+            </div>
+        {% endblock footer %}
+    </footer>
+</section>
+
+{% block javascript %}
+    {% if config['DEBUG'] or config['TESTING'] %}
+        <script src={{ url_for('static',filename='js/jquery.min.js') }}></script>
+        <script src={{ url_for('static',filename='js/dateconverter.js') }}></script>
+    {% else %}
+        <script type="text/javascript" src="{{ url_for('static',filename='js/all.min.js')+ '?v=' + version }}"></script>
+    {% endif %}
+    <script type="text/javascript">
+    {%  if "msie" == request.user_agent.browser or "Trident/" in request.user_agent.string or "MSIE " in request.user_agent.string %}
+        function isCrappyIE() {
+            var ua = window.navigator.userAgent;
+            var crappyIE = false;
+            var msie = ua.indexOf('MSIE ');
+            if (msie > 0) {// IE 10 or older => return version number
+                crappyIE = true;
+            }
+            var trident = ua.indexOf('Trident/');
+            if (trident > 0) {// IE 11 => return version number
+                crappyIE = true;
+            }
+            return crappyIE;
+        }
+        if (!String.prototype.startsWith) {
+            String.prototype.startsWith = function (searchString, position) {
+                position = position || 0;
+                return this.substr(position, searchString.length) === searchString;
+            };
+        }
+        if (!String.prototype.includes) {//To check browser supports or not
+            String.prototype.includes = function (str) {//If not supported, then define the method
+                return this.indexOf(str) !== -1;
+            }
+        }
+        if (!Array.prototype.fill) {
+            Object.defineProperty(Array.prototype, 'fill', {
+                value: function (value) {
+
+                    // Steps 1-2.
+                    if (this == null) {
+                        throw new TypeError('this is null or not defined');
+                    }
+
+                    var O = Object(this);
+
+                    // Steps 3-5.
+                    var len = O.length >>> 0;
+
+                    // Steps 6-7.
+                    var start = arguments[1];
+                    var relativeStart = start >> 0;
+
+                    // Step 8.
+                    var k = relativeStart < 0 ?
+                        Math.max(len + relativeStart, 0) :
+                        Math.min(relativeStart, len);
+
+                    // Steps 9-10.
+                    var end = arguments[2];
+                    var relativeEnd = end === undefined ?
+                        len : end >> 0;
+
+                    // Step 11.
+                    var final = relativeEnd < 0 ?
+                        Math.max(len + relativeEnd, 0) :
+                        Math.min(relativeEnd, len);
+
+                    // Step 12.
+                    while (k < final) {
+                        O[k] = value;
+                        k++;
+                    }
+
+                    // Step 13.
+                    return O;
+                }
+            });
+        }
+        {% endif %}
+        $(document).ready(function () {
+            $(".navbar-burger").click(function () {
+                $(".navbar-burger").toggleClass("is-active");
+                $(".navbar-menu").toggleClass("is-active");
+            });
+        });
+        if ((matchMedia('(prefers-color-scheme: dark)').matches ) && ({{ (session.get('darkmode') != False) | lower}})) {
+         document.documentElement.setAttribute('data-theme', 'dark');
+        }
+        /*const toggleSwitch = document.querySelector('.theme-switch');
+
+        function switchTheme(e) {
+            if (e.target.checked) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+            else {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        }
+        toggleSwitch.addEventListener('change', switchTheme, false);*/
+    </script>
+
+{% endblock javascript %}
+</body>
+</html>

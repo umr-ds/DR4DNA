@@ -1,0 +1,81 @@
+* {
+    font-family: 'Source Code Pro VF', 'Source Code Pro', monospace;
+}
+
+input[type=number]  {
+    max-width: 40% !important;
+}
+
+h4 {
+    display: inline;
+    margin-right: 30px;
+}
+
+.row {
+    #display: flex;
+    flex-wrap: wrap;
+    margin-right: 15px;
+    margin-left: 15px;
+}
+
+.marked-correct {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.marked-incorrect {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.calculated-incorrect {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+.calculated-correct {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+    color: #155724;
+}
+
+.unclear {
+    background-color: #fff3cd;
+    border-color: #ffeeba;
+    color: #5a5a5a;
+}
+
+div {
+    white-space: pre;
+}
+
+.plugin-div {
+    border-style: groove;
+}
+
+div[hidden] {
+    visibility: hidden !important;
+}
+
+.colum-div {
+    margin: 0 !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+}
+
+.inline-switch {
+    display: inline-flex;
+}
+
+.box {
+    overflow-x: scroll;
+    background-color: #CFCFCFFF;
+}
+
+.tree {
+    padding-left: 5px;
+    display: table;
+}
