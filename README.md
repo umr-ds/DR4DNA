@@ -1,4 +1,4 @@
-# Semi-automatic reconstruction for NOREC encoded files.
+# Data recovery methods for DNA storage based on fountain codes.
 
 This tool is intended for use with files encoded using the NOREC4DNA encoding system for DNA data storage.
 However, the concept behind this tool could be used for any fountain-code based storage system.
