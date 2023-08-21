@@ -52,11 +52,17 @@ class RandomShuffleRepair(FileSpecificRepair):
         # find a corrupt chunk from chunk_tag and repair it using the diff calculated earlier.
         repaired_rows = 0
         for packet_diff, corrupt_packet in self.intersects.items():
+            if len(corrupt_packet) > 1:
+                return {
+                    "info": f"Found multiple possible corrupt packets for the same diff: {corrupt_packet}. "
+                            f"This indicates that the errors are linearly dependent!",
+                    "update_b": False, "refresh_view": True}
+            corrupt_packet = corrupt_packet[0]
             for i, row in enumerate(self.chunk_tag):
                 if row == 1 and self.semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[i, int(corrupt_packet)]:
                     # ensure, this row was reduced using the corrupt_packet
                     new_row_content = helper.xor_numpy(self.semi_automatic_solver.decoder.GEPP.b[i],
-                                                       packet_diff).astype("uint8")
+                                                       np.frombuffer(packet_diff, dtype="uint8")).astype("uint8")
                     self.semi_automatic_solver.manual_repair(i, int(corrupt_packet), new_row_content)
                     repaired_rows += 1
                     break

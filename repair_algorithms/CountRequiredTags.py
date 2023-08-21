@@ -36,7 +36,7 @@ class CountRequiredTags(FileSpecificRepair):
         return {"updates_b": False, "refresh_view": False}
 
     def is_compatible(self, meta_info):
-        return True
+        return False
 
     def get_ui_elements(self):
         return {"txt-packet-num": {"type": "int", "text": "Packet to analyze", "default": 0,
@@ -85,6 +85,7 @@ class CountRequiredTags(FileSpecificRepair):
         with open(f"count_all.json", "w") as fp:
             json.dump(res, fp)
         return res
+
 
 mgr = PluginManager()
 mgr.register_plugin(CountRequiredTags)
