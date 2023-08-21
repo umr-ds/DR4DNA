@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 import os
-from setuptools import setup
+from setuptools import setup, find_packages
 
 from pathlib import Path
+from setuptools.command.install import install
+import subprocess
+
+
+class CustomInstall(install):
+    def run(self):
+        install.run(self)  # Run the default installation first
+        subprocess.check_call(['pip', 'install', './NOREC4DNA'])
+
 
 thisDir = Path(__file__).parent
 
@@ -17,4 +26,12 @@ kaitaiSetuptoolsCfg = {
     "inputDir": formatsPath
 }
 
-setup(use_scm_version=True, kaitai=kaitaiSetuptoolsCfg, packages=["repair_algorithms", "NOREC4DNA", "api", "assets"])
+setup(name='DR4DNA', version='1.0.0', use_scm_version=True, kaitai=kaitaiSetuptoolsCfg,
+      packages=find_packages(),
+      setup_requires=[
+          'pip',
+      ],
+      cmdclass={
+          'install': CustomInstall,
+      },
+      )
