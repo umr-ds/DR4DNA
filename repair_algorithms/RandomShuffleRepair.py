@@ -106,6 +106,10 @@ class RandomShuffleRepair(FileSpecificRepair):
                                 self.semi_automatic_solver.initial_b.copy()[permutation])
                 tmp_gepp.solve()
 
+                # ensure that the order is correct / comparable
+                tmp_gepp.A = np.squeeze(tmp_gepp.A[tmp_gepp.result_mapping])
+                tmp_gepp.b = np.squeeze(tmp_gepp.b[tmp_gepp.result_mapping])
+                tmp_gepp.result_mapping = np.arange(tmp_gepp.b.shape[0])
                 # store the solution
                 self.solutions.append(tmp_gepp)
 
@@ -131,6 +135,9 @@ class RandomShuffleRepair(FileSpecificRepair):
         for sol_i, solution in enumerate(self.solutions[1:]):
             diff: numpy.array = np.array([helper.xor_numpy(self.solutions[0].b[i], solution.b[i]) for i in
                                           range(0, self.semi_automatic_solver.decoder.number_of_chunks)], dtype="uint8")
+            if not np.any(diff):
+                # the solutions are identical
+                continue
             unique_diffs = np.unique(np.vstack((unique_diffs, np.unique(diff, axis=0))), axis=0)
         # remove all zero rows:
         unique_diffs = unique_diffs[~np.all(unique_diffs == 0, axis=1)]
@@ -157,7 +164,10 @@ class RandomShuffleRepair(FileSpecificRepair):
 
         for sol_i, solution in enumerate(self.solutions):
             for cmp_sol_i, cmp_solution in enumerate(self.solutions):  # self.solution[sol_i:] instead of all?
-                if cmp_sol_i <= sol_i or np.array_equal(solution.b, cmp_solution.b):
+                if cmp_sol_i <= sol_i or (
+                        np.array_equal(solution.b, cmp_solution.b) and
+                        np.array_equal(solution.chunk_to_used_packets[self.perms[sol_i]],
+                                       cmp_solution.chunk_to_used_packets[self.perms[cmp_sol_i]])):
                     continue
                 for row_i, row in enumerate(solution.b[:self.semi_automatic_solver.decoder.number_of_chunks]):
                     possible_packets_sol = [self.perms[sol_i][i] for i, x in
@@ -205,7 +215,7 @@ class RandomShuffleRepair(FileSpecificRepair):
                                 print("WARNING: diff_bytes not in self.intersects.keys()!")
                                 self.intersects[diff_bytes] = np.array(possible_packets, dtype=np.uint64)
                             self.intersects[diff_bytes] = np.intersect1d(self.intersects[diff_bytes],
-                                                                         possible_packets, assume_unique=True)
+                                                                         possible_packets)
                             self.intersects[diff_bytes] = np.setdiff1d(self.intersects[diff_bytes],
                                                                        np.array(packet_intersect_for_row,
                                                                                 dtype=np.uint64),

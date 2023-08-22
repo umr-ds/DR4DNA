@@ -799,8 +799,8 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
         except ValueError as ve:
             filename = ve.args[1]
         return (filename, dash.no_update,
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                dash.no_update, dash.no_update, dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
     elif trigger_id == "packet-tag-chunk-invalid-button" or trigger_id == "packet-tag-chunk-valid-button":
         try:
             packet_tag_chunk_input = int(packet_tag_chunk_input)
@@ -871,14 +871,12 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
             _file = _file.rename(Path(working_dir + "/" + stem + _file.suffix))
             res += f"{_file.name}, "
         res += "]"
-        matrix_3d = np.dstack([mapping[x].b for x in differing_gepp_ids])
+        tmp = [mapping[x].b for x in differing_gepp_ids]
+        if len(tmp) == 0:
+            return "No differing solutions found!", dash.no_update
+        matrix_3d = np.dstack(tmp)
         most_common_vals, has_single_val = fast_most_common_matrix(matrix_3d)
-        # TODO: find the most common (!) value of each byte to predict the correct value
-        # TODO: detect changes between each differing solution to find which packet was invalid
-        #  (and which were the same for all solutinos)
         # with most_common_vals - gepp_backup.b we can calculate the rows AND columns that differ form the average
-        # TODO: ideally we would want to have an additional boolean matrix containing information about if all
-        #  matrices had the same value at that position (using this, we could detect if a row as correct)
         comp_mat = gepp_backup.b - most_common_vals
         semi_automatic_solver.decoder.GEPP = gepp_backup
         # calculate the invalid packet using by treating all rows from comp_mat with a sum() != 0 as invalid:
