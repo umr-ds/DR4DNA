@@ -84,6 +84,18 @@ some pixels in the image and upload the corrected image. The corrected image wil
 packet, update the equation system and repair any remaining errors.
 While using external tools to correct the image can be easier, that the modified image has to be saved using the exact
 same configuration (width, height, color depth, compression, etc.) as the original image!
+A partially repaired version of the image can be found in `eval/cornell_partial_repaired.bmp`.
+To repair the image, the user has to:
+1) Press `Reload image` to initialize the canvas (optional for external image repair)
+2) Press `Download data` to download the image
+3) Correct a view pixel in the image
+4) Drag and Drop the partially repaired image into the plugin 
+5) Find incorrect positions and (in)correct columns (optional as loading the image will automatically tag the rows) 
+6) Press `Automatic Repair` 
+7) `Reload image` again to see the repaired image 
+8) `Save file` to save the repaired image.
+
+This process is analog to the `Upload repair` plugin, which can be used to upload any partially repaired file. 
 
 3rd example:
 
