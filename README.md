@@ -20,7 +20,7 @@ Python 3.
 # Installation
 
 ```
-git clone git@github.com:thejanky/DR4DNA.git --recurse-submodules
+git clone git@github.com:umr-ds/DR4DNA.git --recurse-submodules
 cd DR4DNA
 
 # optional: create a virtual environment
@@ -29,11 +29,53 @@ source venv/bin/activate
 
 # then run:
 python setup.py install
+
+# alternatively, the depndencies can and might need to be installed using pip:
+pip install -r requirements.txt
 ```
+
+:warning: A internet connection is required for the installation as the setup script will download the required
+dependencies. Without an internet connection or cached versions of the required dependencies, the installation will fail
+with an error code 1!
 
 This will install all required dependencies including the NOREC4DNA framework in the virtual environment.
 The installation should take less than 5 minutes on a typical desktop pc, but can take longer if an older pip version is
 used or if dependency conflicts exists (e.g. if no virtual environment is used).
+
+# Concept:
+
+As already mentioned, this tool aims to provide a way to recover data encoded using fountain codes.
+Compared to conventional error correction, our approach aims to recover data without additional overhead through the
+dependencies between the encoded chunks or - if an automatic recovery is not possible - by using information about the
+encoded data. This information can be used to manually tag chunks as corrupt or correct or to use plugins to identify
+corrupt data and correct it.
+Additionally, it is possible to interface with external file recovery tools which can be used to partially repair a file
+and then load this file into DR4DNA to automatically repair the rest of the file.
+
+![DR4DNA-impl.svg](DR4DNA-impl.svg)
+This tool is uses a plugin system to allow the user to define custom repair methods while integrating the bare logic in
+a backend. Our backend uses the Plotly / DASH Framework to serve the content as a lightweight Web-App. While this
+event-driven design allows for a flexible and extendable architecture, it may reduce readability of the code.
+
+## Automatic recovery:
+
+The generated and stored packets of a fountain code can be represented as a linear equation system, where solving it (
+e.g. using Gaussian elimination or belief propagation) yields the orignial message.
+By calculating A^-1 while solving, it is possible to calculate which packets were used for each chunk during the
+decoding.
+
+If the linear equation system is inconsistent (multiple differing results can be derived from the same equation system),
+the corrupt packet can be identified by permutating the equation system and comparing the used packets for chunk whith
+equal and differing content. Using the difference (error delta) of the differing chunks, the corrupt packet can
+additionally be corrected.
+
+## Manual or content based recovery:
+If the equation system is consistent, the corrupt packet has to be found either using:
+
+- manual tagging of chunks as corrupt or correct until only one possible corrupt packet is left (using A^-1)
+- using plugins to identify corrupt chunks and, if possible, correct them.
+- using external tools in combination with the UploadRepair plugin to first partially repair a file and then use DR4DNA
+  to automatically repair any remaining errors.
 
 # Usage
 
@@ -86,16 +128,17 @@ While using external tools to correct the image can be easier, that the modified
 same configuration (width, height, color depth, compression, etc.) as the original image!
 A partially repaired version of the image can be found in `eval/cornell_partial_repaired.bmp`.
 To repair the image, the user has to:
+
 1) Press `Reload image` to initialize the canvas (optional for external image repair)
 2) Press `Download data` to download the image
 3) Correct a view pixel in the image
-4) Drag and Drop the partially repaired image into the plugin 
-5) Find incorrect positions and (in)correct columns (optional as loading the image will automatically tag the rows) 
-6) Press `Automatic Repair` 
-7) `Reload image` again to see the repaired image 
+4) Drag and Drop the partially repaired image into the plugin
+5) Find incorrect positions and (in)correct columns (optional as loading the image will automatically tag the rows)
+6) Press `Automatic Repair`
+7) `Reload image` again to see the repaired image
 8) `Save file` to save the repaired image.
 
-This process is analog to the `Upload repair` plugin, which can be used to upload any partially repaired file. 
+This process is analog to the `Upload repair` plugin, which can be used to upload any partially repaired file.
 
 3rd example:
 
