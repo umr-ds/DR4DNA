@@ -6,3 +6,7 @@ build
 .sonarlint
 analysis
 venv_text
+eval
+documentation
+clean_test
+reordered_solution

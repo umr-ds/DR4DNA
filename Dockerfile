@@ -5,17 +5,14 @@ COPY . /DR4DNA
 WORKDIR /DR4DNA
 
 RUN apt-get update -y \
- && apt-get install --no-install-recommends -y python-dev software-properties-common gcc virtualenv build-essential cmake make\
- && python -m pip install numpy \
- && python -m pip install pandas
+ && apt-get install --no-install-recommends -y software-properties-common gcc virtualenv build-essential cmake make
 
 # setup NOREC4DNA + dependencies
 WORKDIR /DR4DNA/NOREC4DNA
 RUN find /DR4DNA/NOREC4DNA -name '*.pyc' -delete
-RUN rm -rf /DR4DNA/NOREC4DNA/venv && python -m venv venv && . /DR4DNA/NOREC4DNA/venv/bin/activate && pip install wheel && pip install -r requirements.txt && python setup.py install
+RUN rm -rf /DR4DNA/NOREC4DNA/venv &&  pip install wheel && pip install -r requirements.txt && python setup.py install
 
-WORKDIR /DNA_Aeon
-
+WORKDIR /DR4DNA
 RUN pip install -r requirements.txt && python setup.py install
 
 RUN apt-get purge -y --auto-remove build-essential \
@@ -27,7 +24,6 @@ RUN apt-get purge -y --auto-remove build-essential \
 FROM scratch
 COPY --from=builder / /
 
-WORKDIR /DR4DNA
-ENTRYPOINT ["python", "app.py"]
-#ENTRYPOINT ["bash"]
-#CMD ["bash"]
+WORKDIR /DR4DNA/working_dir
+
+ENTRYPOINT ["python", "../app.py", "input.ini"]

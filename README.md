@@ -42,6 +42,41 @@ This will install all required dependencies including the NOREC4DNA framework in
 The installation should take less than 5 minutes on a typical desktop pc, but can take longer if an older pip version is
 used or if dependency conflicts exists (e.g. if no virtual environment is used).
 
+# Using Docker:
+
+DR4DNA can be used using Docker. This will automatically install all required dependencies and start the tool.
+
+## Using the docker image from DockerHub:
+
+```bash
+TBD
+# docker run -v ./working_dir:/DR4DNA/working_dir -p 8050:8050 umr-ds/dr4dna
+```
+
+## Building from source:
+
+```bash
+docker build --tag dr4dna .
+docker run -v ./working_dir:/DR4DNA/working_dir -p 8050:8050 dr4dna
+```
+
+### :warning: Note:
+
+When using the docker image, DR4DNA expects the input ini file in the following location: "
+working_dir/input.ini" with the corresponding fasta file in the same folder!
+
+#### Example:
+
+- Place your <name>.fasta file into an empty folder <working_dir>
+- Place your <name>.ini file into the same folder <working_dir> and rename it to **input.ini**
+- Run the docker image using the following command:
+
+```bash
+docker run -v ./<working_dir>:/DR4DNA/working_dir -p 8050:8050 umr-ds/dr4dna
+```
+
+where <working_dir> is the name of the folder containing the input files!
+
 # Concept:
 
 As already mentioned, this tool aims to provide a way to recover data encoded using fountain codes.
@@ -70,6 +105,7 @@ equal and differing content. Using the difference (error delta) of the differing
 additionally be corrected.
 
 ## Manual or content based recovery:
+
 If the equation system is consistent, the corrupt packet has to be found either using:
 
 - manual tagging of chunks as corrupt or correct until only one possible corrupt packet is left (using A^-1)
@@ -161,7 +197,11 @@ The repaired file can then be stored using `Save file`
 
 While most of the functions are fast enough to be used in real-time, the automatic repair can take a long time if the
 input file is large and does not contain a file-wide checksum. All included example files that can be automatically
-repaired could be repaired in less than 5 minutes on a typical desktop pc.
+repaired could be repaired in less than 5 minutes on a typical desktop pc. Typically, the automatic repair will take a
+few seconds to a few minutes, depending on the number of chunks, the number of corrupt packets and the number of random
+permutations to perform.
+It should be noted, that the complexity of our approach can be reduced by using a belief-propagation based approach
+instead of Gaussian elimination.
 
 ## Overview
 
