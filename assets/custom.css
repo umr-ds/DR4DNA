@@ -6,6 +6,13 @@ input[type=number]  {
     max-width: 40% !important;
 }
 
+#analytics-input {
+    position: sticky;
+    top: 0;
+    background-color: #ffff99;
+    text-align: center;
+}
+
 h4 {
     display: inline;
     margin-right: 30px;

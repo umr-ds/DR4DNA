@@ -33,12 +33,9 @@ def update_point(trace, points, selector):
 
 
 LAST_CHUNK_LEN_FORMAT = "I"
-# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-EXTERNAL_STYLESHEETS = [
-    "https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"]  # Dash instance oluştururken component builder'in style sheets'ini göndereceğiz
+EXTERNAL_STYLESHEETS = ["https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"]
 META_TAGS = [{"name": "viewport", "content": "width=device-width, initial-scale=1"}]
 
-# app = dash.Dash(__name__, external_stylesheets=EXTERNAL_STYLESHEETS, meta_tags=META_TAGS)
 app = DashProxy(__name__, external_stylesheets=EXTERNAL_STYLESHEETS, meta_tags=META_TAGS,
                 prevent_initial_callbacks=True, transforms=[MultiplexerTransform()])
 white_button_style = {'backgroundColor': 'white'}
@@ -123,6 +120,7 @@ def init_globals(semi_automatic_solver):
                                                                labelPosition='bottom', className="inline-switch"
                                                                ), html.Label("Multiple"),
                                               ]),
+                                    # Colorblind switch:
                                     html.Div([html.Label("Normal mode"),
                                               daq.ToggleSwitch(id="colorblind-switch",
                                                                label='Colorblind mode',
@@ -237,18 +235,22 @@ def reset_chunk_tag():
 
 def load_plugin(plugin_inst):
     global input_callback_handler, show_canvas
+
     plugin_inst.on_load()
+
+    # Get the UI elements from the plugin instance:
     ui: typing.Dict[
         str, typing.Dict[str, typing.Union[str, bool, typing.Callable]]] = plugin_inst.get_ui_elements()
+    # Initialize a list to store the plugin's child elements:
     _plugin_childs = [html.H4(f'Plugin: "{plugin_inst.__class__.__name__}"', className="tag")]
+
+    # Iterate over the UI elements and create the corresponding Dash elements:
     for key, value in ui.items():
         if value["type"] == "button":
             _plugin_childs.append(
                 html.Button(value["text"], id={'type': 'plugin_io_btn', 'index': key}, className="button"))
             if "updates_canvas" in value and value["updates_canvas"]:
                 show_canvas = True
-                # canvas_updater.append(Input({'type': 'plugin_io_btn', 'index': key}, 'n_clicks'))
-            # input_callback_handler.append(Input(key, "n_clicks"))
         elif value["type"] == "int":
             default_value = 0 if "default" not in value else value["default"]
             _plugin_childs.append(html.Div([html.Label(value["text"], className="label"),
@@ -258,8 +260,6 @@ def load_plugin(plugin_inst):
                                                 className="control")], className="field"))
             if "updates_canvas" in value and value["updates_canvas"]:
                 show_canvas = True
-                # canvas_updater.append(Input({'type': 'plugin_io_value', 'index': key}, 'value'))
-            # input_callback_handler.append(Input(key, "value"))
         elif value["type"] == "text":
             _plugin_childs.append(html.Div([html.Label(value["text"], className="label"),
                                             html.Div(
@@ -268,17 +268,9 @@ def load_plugin(plugin_inst):
                                                 className="control")], className="field"))
             if "updates_canvas" in value and value["updates_canvas"]:
                 show_canvas = True
-                # canvas_updater.append(Input({'type': 'plugin_io_value', 'index': key}, 'value'))
-            # input_callback_handler.append(Input(key, "value"))
         elif value["type"] == "canvas":
             show_canvas = True
-            # _plugin_childs.append(TODO)
-            # canvas_list.append(Output({'type': 'dashCanvas', 'index': key}, 'image_content'))
-            # canvas_list.append(Output({'type': 'dashCanvas', 'index': key}, 'json_data'))
-            # _plugin_childs.append(dcc.Graph(id={'type': 'plugin_io_value', 'index': key}, config={'displayModeBar': False}))
-            # input_callback_handler.append(Input(key, "value"))
         elif value["type"] == "kaitai_view":
-            # create a Button to toddlge the visibility of the kaitai view (html.Div)
             _plugin_childs.append(
                 html.Button(value["text"], id={'type': 'plugin_io_btn', 'index': key}, className="button"))
         elif value["type"] == "upload":
@@ -299,14 +291,13 @@ def load_plugin(plugin_inst):
                         'textAlign': 'center',
                         'margin': '10px'
                     },
-                    # Allow multiple files to be uploaded
+                    # Don't allow multiple files to be uploaded
                     multiple=False
                 ),
                 html.Div(id={'type': 'output-data-upload', 'index': key}),
             ]))
             if "updates_canvas" in value and value["updates_canvas"]:
                 show_canvas = True
-                # canvas_updater.append(Input({'type': 'upload-data', 'index': key}, 'value'))
         elif value["type"] == "download":
             _plugin_childs.append(dcc.Download(id={'type': 'plugin_io_download-data', 'index': key}))
             _plugin_childs.append(
@@ -328,7 +319,6 @@ def load_plugin(plugin_inst):
               prevent_initial_call=True, )
 def download_data(n_clicks):
     c_ctx = dash.callback_context
-    trigger_id = c_ctx.triggered[0]["prop_id"].split(".")[0]
     if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith("plugin_io"):
         trigger_id = c_ctx.triggered_id["index"]
         for _plugin in plugin_manager.plugin_instances:
@@ -370,7 +360,7 @@ def calculate_column_correctness_view():
     for _i, val in enumerate(tag):
         val = min(val, 255)
         use_val = min(multiplicator * val, 255)
-        res.append(html.Div(className="colum-div", id=f"column-div-right-{_i}", children=f"+",
+        res.append(html.Div(className="colum-div", id=f"column-div-right-{_i}", children="+",
                             style={"background-color": f"#FF0000{hex(use_val).replace('0x', '').zfill(2)}"}))
     res.append("|")
     return html.Div([html.H4(f"{''.join(['-'] * 8)}", id="column_indicator_h"),
@@ -384,9 +374,8 @@ def propagete_chunk_tag_update():
             _plugin.update_chunk_tag(get_chunk_tag())
 
 
-def propagete_gepp_update():
+def propagate_gepp_update():
     global content_updated
-    # TODO: update the semi_automatic_solver (WE CAN NOT create a new instance, because of the plugin system)
     # invalidate old chunk_tags and propagate new GEPP to all plugins
     reset_chunk_tag()
     content_updated = True
@@ -413,7 +402,6 @@ def repair_chunks(repair_id, hex_value):
     if sum(common_packets) != 1 and not semi_automatic_solver.multi_error_packets_mode:
         return html.Div("More than one packet still possible!"), dash.no_update, dash.no_update
     # use only the common packets that influence the selected chunk
-    # FIXME: this is not working correctly: it selects a packet that will update a chunk that was tagged as correct - or is it?
     # an additional problem seems to be that we can tag chunks as invalid, others as valid and they yield to a deadlock
     # e.g. packet 1 was used for chunk 1 and 2, packet 2 was used for chunk 3 and 4 and packet 3 was user for chunk 5 and 4
     # if we tag chunk 1 as valid, chunk 2 as invalid, then multi-mode will yield packet 2 and packet 3 as possible invalid packets
@@ -425,7 +413,7 @@ def repair_chunks(repair_id, hex_value):
             common_packets_for_chunk[packet_id] = True
     semi_automatic_solver.manual_repair(repair_id, np.argmax(common_packets_for_chunk),
                                         bytearray.fromhex(hex_value.replace(" ", "")))
-    propagete_gepp_update()
+    propagate_gepp_update()
     return recalculate_view()
 
 
@@ -442,7 +430,7 @@ def repair_and_store_by_packet(chunk_id, packet_id, hex_value, clear_working_dir
             shutil.rmtree(working_dir)
         # create the folder working_dir:
         Path(working_dir).mkdir(parents=True, exist_ok=True)
-    # TODO we might have to check if header chunk is used!
+    # we might have to check if header chunk is used!
     semi_automatic_solver.parse_header("I")
     if semi_automatic_solver.headerChunk is not None and semi_automatic_solver.headerChunk.checksum_len_format is not None:
         is_correct = semi_automatic_solver.is_checksum_correct()
@@ -465,7 +453,8 @@ def repair_and_store_by_packet(chunk_id, packet_id, hex_value, clear_working_dir
 
 @app.callback(
     Output({'type': 'e_row', 'index': MATCH}, 'style'),
-    [Input({'type': 'e_row', 'index': MATCH}, 'n_clicks'), Input({'index': MATCH, 'type': 'e_row'}, 'n_clicks')],
+    [Input({'type': 'e_row', 'index': MATCH}, 'n_clicks'),
+     Input({'index': MATCH, 'type': 'e_row'}, 'n_clicks')],
     prevent_initial_call=True)
 def change_button_style(n_clicks, n_clicks2):
     clicked_line = ctx.triggered_id["index"]
@@ -486,7 +475,6 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
         hex_value = ""
     if txt_value is None:
         txt_value = ""
-    # TODO: allow sum(common_packets) > 1
     # in this case, all we have to do is propagate to all packets that are still reachable from chunk "id_value"
     # and then recalculate the view
     if trigger_id == "repair-button" and (id_value is None or get_chunk_tag()[id_value] == 2 or get_chunk_tag()[
@@ -514,11 +502,11 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
             hex_vals = hex_value.split(" ")
             if len(txt_value) == len(hex_vals):
                 # care!: we should ONLY change bytes in hex-view if the corresponding byte in txt-view is changed (is a printable character!)
-                # problem: we use "." for non printable chars in txt-view. Thus we have to check
-                # if the corresponding byte in hex-view is a printable "." or if the byte is a non printable byte
+                # problem: we use "." for non-printable chars in txt-view. Thus, we have to check
+                # if the corresponding byte in hex-view is a printable "." or if the byte is a non-printable byte
                 # iterate over all charaters in
                 for _i, val in enumerate(txt_value):
-                    # TODO / PROBLEM: if the user intentionally changes a byte to "." from a non printable character,
+                    # PROBLEM: if the user intentionally changes a byte to "." from a non-printable character,
                     # we do not propagate this change...
                     # if we have a non-printable character in hex-view and "." in txt view, skip it...
                     if not (32 <= int(hex_vals[_i], 16) <= 127) and val == ".":
@@ -561,46 +549,28 @@ def parse_contents(contents):
     return img_content
 
 
-# @app.callback(Output('dashCanvas', 'image_content'),
-#              Input({'type': 'plugin_io_upload-data', "index": ALL}, 'contents'))
-def update_output(list_of_contents):
-    children = []
-    if list_of_contents is not None:
-        c_ctx = dash.callback_context
-        trigger_id = c_ctx.triggered[0]["prop_id"].split(".")[0]
-        if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith("plugin_io"):
-            trigger_id = c_ctx.triggered_id["index"]
-            for _plugin in plugin_manager.plugin_instances:
-                ui: typing.Dict[
-                    str, typing.Dict[str, typing.Union[str, bool, typing.Callable]]] = _plugin.get_ui_elements()
-                for key, value in ui.items():
-                    if trigger_id == key:
-                        children += [value["callback"](chunk_tag=get_chunk_tag(), content=c) for c in list_of_contents]
-        return children[0]
-
-
 @app.callback(Output('analyze-count-output', 'children'),
               Output('row_view', 'children'),
               Output("ls-loading-output-2", "children"),
               Output("dashCanvas", "json_data"),
               Input('dashCanvas', 'json_data'))
-def update_canvas_data(data):
+def update_canvas_data(json_data):
     updates_b = False
     new_json_data = dash.no_update
-    if data is not None:
-        for _plugin in plugin_manager.plugin_instances:
-            if not _plugin.active:
-                continue
-            res = _plugin.update_canvas(data)
-            if res is not None:
-                if "updates_b" in res:
-                    updates_b = res["updates_b"]
-                if "chunk_tag" in res:
-                    update_chunk_tag(res["chunk_tag"])
-            if updates_b:
-                propagete_gepp_update()
-        return recalculate_view() + (new_json_data,)
-    return dash.no_update
+    if json_data is None:
+        return dash.no_update
+    for _plugin in plugin_manager.plugin_instances:
+        if not _plugin.active:
+            continue
+        res = _plugin.update_canvas(json_data)
+        if res is not None:
+            if "updates_b" in res:
+                updates_b = res["updates_b"]
+            if "chunk_tag" in res:
+                update_chunk_tag(res["chunk_tag"])
+        if updates_b:
+            propagate_gepp_update()
+    return recalculate_view() + (new_json_data,)
 
 
 @app.callback(
@@ -631,16 +601,12 @@ def update_canvas_data(data):
     input_callback_handler,
     prevent_initial_call=True
 )
-def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_content, canvas_width, canvas_height,
-                     repairt_button_n_clicks, repair_reorder_clicks, repair_id, repair_hex_value, repair_txt_value,
-                     repair_button_clicks, analyze_button_clicks, repair_exclusion_button_clicks,
-                     repair_reorder_input, reset_chunk_tag_button_clicks, calculate_rank_button, save_button_clicks,
-                     packet_tag_chunk_invalid, packet_tag_chunk_valid, mode_switch_on, forceload_plugin_button, *args,
-                     **kwargs):
+def callback_handler(*args, **kwargs):
     global chunk_tag
     canvas_image_content = dash.no_update
     info_str = dash.no_update
     c_ctx = dash.callback_context
+    packet_tag_chunk_input = c_ctx.states.get('packet-tag-chunk-input.value')
     kaitai_view = dash.no_update
     trigger_id = c_ctx.triggered[0]["prop_id"].split(".")[0]
     if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith("plugin_io"):
@@ -668,7 +634,7 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
                             canvas_image_content = res_value
                         elif k == "canvas_data":
                             if "updates_canvas" in res and res["updates_canvas"]:
-                                # TODO: we want to update all canvas data (the image including ALL tags/drawings)
+                                # we may want to update all canvas data (the image including ALL tags/drawings)
 
                                 if "height" in res and "width" in res:
                                     canvas_height = res["height"]
@@ -735,7 +701,7 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
                                                               "".join([x.replace("0x", "").zfill(2) for x in
                                                                        np.vectorize(hex)(
                                                                            res_value["corrected_value"])]))
-                            propagete_gepp_update()
+                            propagate_gepp_update()
                             return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
                                     dash.no_update, dash.no_update,) + repair_chunks_res + (
                                 dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
@@ -745,7 +711,7 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
                     if ("refresh_view" in res and res["refresh_view"]) or refresh_view or update_b or (
                             "updates_b" in res and res["updates_b"]):
                         if update_b or ("updates_b" in res and res["updates_b"]):
-                            propagete_gepp_update()
+                            propagate_gepp_update()
                         return (info_str, dash.no_update, dash.no_update, dash.no_update,
                                 dash.no_update,
                                 dash.no_update, dash.no_update,) + recalculate_view() + (
@@ -753,12 +719,14 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
                     else:
                         return (info_str,) + (dash.no_update,) * 11 + (canvas_image_content, kaitai_view)
     if trigger_id == "repair-button" or trigger_id == "hex-repair-input" or trigger_id == "txt-repair-input":
-        return repair_callback(trigger_id, repairt_button_n_clicks, repair_id, repair_hex_value, repair_txt_value) + \
+        return repair_callback(trigger_id, c_ctx.inputs.get("repair-button.n_clicks"),
+                               c_ctx.inputs.get('repair-id-input-box.value'),
+                               c_ctx.inputs.get('hex-repair-input.value'), c_ctx.inputs.get('txt-repair-input.value')) + \
             (dash.no_update, dash.no_update, "", dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
     elif trigger_id == "repair-chunks-button":
         return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update,) + \
-            repair_chunks(repair_id, repair_hex_value) + (
+            repair_chunks(c_ctx.inputs.get('repair-id-input-box.value'), c_ctx.inputs.get('hex-repair-input.value')) + (
                 dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
     elif trigger_id == "analyze-button":
         return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
@@ -768,7 +736,7 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
         res, gepp = semi_automatic_solver.repair_by_exclusion(common_packets)
         if res:
             semi_automatic_solver.decoder.GEPP = gepp
-            propagete_gepp_update()
+            propagate_gepp_update()
             return (info_str, dash.no_update, dash.no_update, dash.no_update,
                     dash.no_update,
                     dash.no_update, dash.no_update,) + recalculate_view() + (
@@ -815,7 +783,7 @@ def callback_handler(packet_tag_chunk_input, canvas_json_state, canvas_image_con
                 dash.no_update, dash.no_update,) + recalculate_view() + (
             dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
     elif trigger_id == "mode-switch":
-        semi_automatic_solver.set_multi_error_mode(mode_switch_on)
+        semi_automatic_solver.set_multi_error_mode(c_ctx.inputs.get('mode-switch.value'))
         return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update,) + recalculate_view() + (
             dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
@@ -928,7 +896,7 @@ def fast_most_common_matrix(matrices: np.array) -> np.array:
             b_count = np.bincount(matrices[_i, _j, :])
             most_common_element = b_count.argmax()
             output_matrix[_i, _j] = most_common_element
-            has_single_val[_i, _j] = len(np.where(b_count != 0)[0]) == 1
+            has_single_val[_i, _j] = len(np.nonzero(b_count)[0]) == 1
     return output_matrix, has_single_val
 
 

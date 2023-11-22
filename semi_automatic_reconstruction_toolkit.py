@@ -118,7 +118,7 @@ class SemiAutomaticReconstructionToolkit:
         pass
 
     def repair_by_exclusion(self, comm_packet):
-        # TODO check if the matrix is still solvable after we remove all packets that are invalid
+        # speedup: check if the matrix is still solvable after we remove all packets that are invalid
         tmp_gepp: GEPP = GEPP(self.initial_A.copy(), self.initial_b.copy())
         for i, is_common in reversed(list(enumerate(comm_packet))):
             if is_common:
@@ -126,11 +126,11 @@ class SemiAutomaticReconstructionToolkit:
         try:
             res = tmp_gepp.isPotentionallySolvable() and not any(tmp_gepp.find_missing_chunks()) and tmp_gepp.solve()
         except:
-            res = False  # TODO add information that the user should always tag rows first!
+            res = False
         return res, tmp_gepp
 
     def all_solutions_by_reordering(self, comm_packet, only_possible_invalid_packets=False):
-        # TODO check if the matrix is still solvable after we remove all packets that are invalid
+        # speedup: we might want to check if the matrix is still solvable after we remove all packets that are invalid
         mapping = dict()
         # if only_possible_invalid_packets is True: remove all packets _i_ where comm_packets[i] is True
         if only_possible_invalid_packets:
@@ -188,9 +188,9 @@ class SemiAutomaticReconstructionToolkit:
             try:
                 file_name = self.headerChunk.get_file_name().decode("utf-8")
                 if self.headerChunk.data[-1] != 0x00:
-                    raise Exception("Headerchunk is not null terminated!" +
+                    raise RuntimeError("Headerchunk is not null terminated!" +
                                     "Either the headerchunk is corrupt or no headerchunk was used!")
-            except Exception as ex:
+            except RuntimeError as ex:
                 print("Warning:", ex)
         file_name = file_name.split("\x00")[0]
         res = []
@@ -230,7 +230,6 @@ class SemiAutomaticReconstructionToolkit:
             ret.append((f"{j:08x} | " if add_line_numbers else "") + f"{s1: <{width * 3}}  |{s2: <{width}}|")
         return ret
 
-    # TODO add option to tag chunks by defining the broken packet (via input field)
     def get_corrupt_chunks_by_packets(self, packets, chunk_tag=None, tag_num=1):
         """
         returns a list of all chunks that are affected by the given packets
@@ -313,12 +312,10 @@ if __name__ == "__main__":
     sleep(1)
     print("Enter the rows that are INVALID (as hex; separated by space): ")
     invalid_rows = input().split(" ")
-    # invalid_rows = ["95c", "8","a2"]
     invalid_rows = [int(i, 16) for i in invalid_rows]
 
     print("Enter the rows that are VALID (as hex; separated by space): ")
     valid_rows = input().split(" ")
-    # invalid_rows = ["95c", "8","a2"]
     valid_rows = [int(i, 16) for i in valid_rows]
 
     common_packets = semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows, valid_rows)
