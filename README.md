@@ -13,7 +13,7 @@ However, the concept behind this tool could be used for any fountain-code based 
 
 # Requirements
 
-Fot the installation, Python 3.8 and pip is required (we recommend 22.1.2 or newer)
+Fot the installation, Python 3.8 (or newer) and pip (we recommend 22.1.2 or newer) is required 
 The software has been tested on Ubuntu 20.04, Ubuntu 22.04 and Windows 11, but should work on any system supporting
 Python 3.
 

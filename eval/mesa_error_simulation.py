@@ -57,9 +57,11 @@ if __name__ == "__main__":
     mesa_config_filename = args.mesa_config
     main(fasta_filename, apikey, mesa_config_filename)
 
+    """
     org_fasta = load_fasta(r"NOREC4DNA_17.zip_RU10.fasta")
     mut_fasta = load_fasta(r"NOREC4DNA_17.zip_RU10_mutated.fasta")
 
     for val in mut_fasta.values():
         if val not in org_fasta.values():
             print(f"{val} not in org_fasta")
+    """
