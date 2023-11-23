@@ -2,6 +2,15 @@
     font-family: 'Source Code Pro VF', 'Source Code Pro', monospace;
 }
 
+html,body,.wrapper{
+ height:100%;
+}
+
+#row_view {
+  height: 100vh;
+}
+
+
 input[type=number]  {
     max-width: 40% !important;
 }
@@ -11,6 +20,8 @@ input[type=number]  {
     top: 0;
     background-color: #ffff99;
     text-align: center;
+    /* force text to be above buttons and other elements: */
+    z-index: 1;
 }
 
 h4 {
