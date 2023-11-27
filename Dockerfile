@@ -1,4 +1,4 @@
-FROM python:3.9 as builder
+FROM python:3.9 AS builder
 MAINTAINER Peter Michael Schwarz "peter.schwarz@uni-marburg.de"
 
 COPY . /DR4DNA

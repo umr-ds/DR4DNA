@@ -3,25 +3,27 @@ import csv
 import json
 import multiprocessing
 import os
-import contextlib
 import datetime
 import shutil
 from functools import partial
 from math import ceil
-
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas
 from matplotlib.lines import Line2D
-
 from norec4dna import nocode, get_error_correction_encode
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
-
 from NOREC4DNA.demo_raptor_encode import demo_raptor_encode
+
+"""
+This script runs an experiment multiple times and for different overhead values. 
+Besides saving the raw collected data, it also saves the parsed data in a csv file and plots the results.
+"""
 
 packet_count_already_encoded = set()
 
+# as fountain codes are invariant regarding the content, its length, an added packet or an additional inner code,
+# the chunk size is the only relevant parameter for this experiment:
 __chunk_size = 73
 __insert_header = True
 __file = "box.bmp"
@@ -75,9 +77,8 @@ if __name__ == "__main__":
     num_processors = multiprocessing.cpu_count() - 4
     pool = multiprocessing.Pool(processes=num_processors)
 
-    for overhead in [0.00042176297, 0.00084352594]:
-        # [0.00042194093, 0.00084388186, 0.00126582278, 0.00168776371, 0.00210970464, 0.00253164557,
-        #             0.0029535865, 0.00337552743, 0.00379746835, 0.00421940928]:  # np.arange(0.001, 0.01, 0.001):
+    for overhead in [0.00042176297, 0.00084352594, 0.00126582278, 0.00168776371, 0.00210970464, 0.00253164557,
+                     0.0029535865, 0.00337552743, 0.00379746835, 0.00421940928]:  # np.arange(0.001, 0.01, 0.001):
         # [0.01, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]:
         file_size = os.stat(__file).st_size
         number_of_chunks = ceil(1.0 * file_size / __chunk_size) + (1 if __insert_header else 0)
@@ -146,7 +147,8 @@ if __name__ == "__main__":
                 writer.writerow({'filename': key, 'num_chunks': number_of_chunks, 'num_rows': number_of_rows,
                                  'num_success': sum(lst_results), 'run': i})
 
-date_time_str = datetime.datetime.now().strftime('%d_%m_%Y_%H_%M_%S')
+# plot the results - if you want to combine multiple csv-files, use the script "overhead_vs_non_critical_packets.py"!:
+# while we could omit storing and loading to/from csv, this allows us to generate plots for older experiments:
 df = pandas.read_csv(f"exp_{date_time_str}.csv")
 ax = sns.violinplot(x='num_rows', y='num_success', data=df, scale='count')
 

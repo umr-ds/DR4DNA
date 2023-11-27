@@ -5,6 +5,18 @@ import csv
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 from repair_algorithms.PluginManager import PluginManager
 
+"""
+Using the currently loaded file, this plugin analyzes the required tags (valid and invalid) for a given packet and
+stores the results in a json file.
+
+Running this script on its own will parse the selected json file and produce a csv in the analysis folder called 
+"output_count.csv" containing the average number of possible packets for each combination of valid and invalid tags. 
+This csv can be used in the script "analysis/CountRequiredAnalysis.py" for further visualization.
+
+The separation of json and csv files was done to allow for easier and faster analysis of multiple files at once while 
+preventing loss of raw data.
+"""
+
 
 def bool_array_to_index(arr):
     """ returns a list of indices where arr is True """
@@ -53,7 +65,7 @@ class CountRequiredTags(FileSpecificRepair):
                 #                           "updates_b": True}
                 }
 
-    def analyze_selected_packet(self, inspect_num=None, as_json=True, *args, **kwargs):
+    def analyze_selected_packet(self, inspect_num=None, *args, **kwargs):
         if inspect_num is None:
             inspect_num = self.inspect_packet_num
         invalid = self.semi_automatic_solver.get_corrupt_chunks_by_packets([self.inspect_packet_num])  # == invalid_rows
@@ -66,16 +78,15 @@ class CountRequiredTags(FileSpecificRepair):
                 if v == 0 and i == 0:
                     continue
                 res[f"({int(v)}, {int(i)})"] = []
-                for perm in np.arange(self.no_permutations):
+                for _ in np.arange(self.no_permutations):
                     valid_rows = np.random.choice(valid, v)
                     invalid_rows = np.random.choice(invalid, i)
                     res[f"({int(v)}, {int(i)})"].append(
                         bool_array_to_index(self.semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows,
                                                                                                        valid_rows,
                                                                                                        self.semi_automatic_solver.multi_error_packets_mode)))
-        if as_json:
-            with open(f"count_{inspect_num}.json", "w") as fp:
-                json.dump(res, fp)
+        with open(f"count_{inspect_num}.json", "w") as fp:
+            json.dump(res, fp)
         return res
 
     def analyze_all_packets(self, *args, **kwargs):
@@ -103,7 +114,7 @@ if __name__ == "__main__":
                 tmp += len(it)
             res[chosen_packet][tpl] = 1.0 * tmp / len(js[chosen_packet][tpl])
 
-    with open('../analysis/output_331.csv', 'w', newline='') as csvfile:
+    with open('../analysis/output_count.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         header = ["selected_packet", "valid", "invalid", "avg_degree"]
         writer.writerow(header)
