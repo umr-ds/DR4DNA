@@ -28,3 +28,9 @@ including the levenshtein distance between related rows.
 When using `Cornell_box_radiosity_small.bmp_RU10_120.ini` as input file, you can use the file
 `Cornell_box_radiosity_small.bmp_RU10_120_USE_FOR_UPLOAD.bmp` as a partially repaired image for the BMP Plugin (or the
 Upload-Plugin).
+
+### Results and visualizations:
+
+While this folder contains various example files and files used for the evaluation, the results of the evaluation can be
+found in the `analysis` folder. The `analysis` folder contains additional scripts to create various visualizations and
+figures, whereas the `eval` folder contains the raw data required to repeat any experiment.
