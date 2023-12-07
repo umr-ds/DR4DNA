@@ -46,6 +46,7 @@ from numpy.linalg import matrix_rank
 class SemiAutomaticReconstructionToolkit:
     def __init__(self, decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder]):
         self.decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder] = decoder
+        decoder.read_all_before_decode = True
         self.headerChunk: typing.Optional[HeaderChunk] = None
         self.decoder.GEPP.insert_tmp()
         self.initial_A = self.decoder.GEPP.A.copy()

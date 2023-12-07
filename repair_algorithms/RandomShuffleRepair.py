@@ -107,8 +107,10 @@ class RandomShuffleRepair(FileSpecificRepair):
                 tmp_gepp.solve()
 
                 # ensure that the order is correct / comparable
-                tmp_gepp.A = np.squeeze(tmp_gepp.A[tmp_gepp.result_mapping])
-                tmp_gepp.b = np.squeeze(tmp_gepp.b[tmp_gepp.result_mapping])
+                tmp_A = np.squeeze(tmp_gepp.A[tmp_gepp.result_mapping])
+                tmp_b = np.squeeze(tmp_gepp.b[tmp_gepp.result_mapping])
+                tmp_gepp.A = np.vstack((tmp_A, tmp_gepp.A[tmp_A.shape[0]:]))
+                tmp_gepp.b = np.vstack((tmp_b, tmp_gepp.b[tmp_b.shape[0]:]))
                 tmp_gepp.result_mapping = np.arange(tmp_gepp.b.shape[0])
                 # store the solution
                 self.solutions.append(tmp_gepp)
@@ -130,6 +132,20 @@ class RandomShuffleRepair(FileSpecificRepair):
         info_str = ""
         # calculate the unique diffs between the solutions:
         # (we only need to compare the first solution with the others!) - since the user only sees the first solution!
+
+        # we add an additional solution where we update all rows i of b for which A[i] contains only 0:
+        # we have to set b[i] to a zero vector AND A^-1[i] to a zero vector as well
+        # -> then we can use the code as below!
+        modified_initial_sol = GEPP(self.solutions[0].A, self.solutions[0].b)
+        modified_initial_sol.chunk_to_used_packets = self.solutions[0].chunk_to_used_packets.copy()
+        for i, row in enumerate(modified_initial_sol.A):
+            if np.all(row == False):
+                # we found a row that is all 0, so we set b[i] to a zero vector AND A^-1[i] to a zero vector as well
+                modified_initial_sol.b[i] = np.zeros_like(modified_initial_sol.b[i])
+                modified_initial_sol.chunk_to_used_packets[i] = np.zeros_like(
+                    modified_initial_sol.chunk_to_used_packets[i])
+        self.solutions.append(modified_initial_sol)
+        self.perms.append(self.perms[0])
 
         unique_diffs = np.zeros((1, self.semi_automatic_solver.decoder.GEPP.b.shape[1]), dtype="uint8")
         for sol_i, solution in enumerate(self.solutions[1:]):
@@ -272,7 +288,8 @@ class RandomShuffleRepair(FileSpecificRepair):
             info_str = "Found no corrupt packet: The LES seems to be correct (or the corrupt packet cannot be described by a linear combination of other packets)."
             # we could use this information to remove all packets that do HAVE a linear combination of other packets.
         return {"info": info_str, "update_b": False, "refresh_view": True}
-
+        #TODO: we want to update our solutions with the new information:
+        # for a partial solution we may want to show the used which packets / rows are correct and which are incorrect!
     def is_compatible(self, meta_info):
         # upload (offline repair) is always possible...
         rank_augmented_matrix = self.semi_automatic_solver.calculate_rank_augmented_matrix()

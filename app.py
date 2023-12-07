@@ -841,7 +841,9 @@ def callback_handler(*args, **kwargs):
         res += "]"
         tmp = [mapping[x].b for x in differing_gepp_ids]
         if len(tmp) == 0:
-            return "No differing solutions found!", dash.no_update
+            return ("No differing solutions found!", dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+                    dash.no_update, dash.no_update, dash.no_update)
         matrix_3d = np.dstack(tmp)
         most_common_vals, has_single_val = fast_most_common_matrix(matrix_3d)
         # with most_common_vals - gepp_backup.b we can calculate the rows AND columns that differ form the average
@@ -952,7 +954,6 @@ if __name__ == '__main__':
     ini_file = args.ini
 
     cfg_worker = ConfigReadAndExecute(ini_file)
-    #    "box.bmp_Thu_Mar_30_11_28_21_2023_228.ini")  # box.bmp_Thu_Mar_30_10_19_49_2023.ini
     x = cfg_worker.execute(return_decoder=True, skip_solve=True)[0]
     semi_automatic_solver = SemiAutomaticReconstructionToolkit(x)
     semi_automatic_solver.decoder.solve(partial=True)
