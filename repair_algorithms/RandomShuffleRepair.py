@@ -17,6 +17,7 @@ from repair_algorithms.PluginManager import PluginManager
 class RandomShuffleRepair(FileSpecificRepair):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.modified_initial_sol = None
         self.num_shuffles = 5
         self.error_matrix = None
         self.file_bytes = None
@@ -71,6 +72,32 @@ class RandomShuffleRepair(FileSpecificRepair):
                 "info": f"Could not find a chunk matching the corrupt packet. This usually only happens if the corrupt packet was not used for any row.",
                 "update_b": False, "refresh_view": True}
         return {"update_b": True, "refresh_view": True}
+
+    def partial_repair(self, *args, **kwargs):
+        if self.intersects is None:
+            return {"info": f"Calculate the corrupt packet(s) using 'Find corrupt packet by shuffling' first.",
+                    "update_b": False, "refresh_view": True}
+        max_found = 0
+        for packet_diff, corrupt_packet_candidates in self.intersects.items():
+            if len(corrupt_packet_candidates) > max_found:
+                max_found = len(corrupt_packet_candidates)
+        if max_found == 1:
+            return self.repair()
+        else:
+            base = self.intersects.pop(b"base")
+            if len(self.intersects) > 1:
+                self.intersects[b"base"] = base
+                return {
+                    "info": f"Found multiple error deltas with multiple possible corrupt packets: "
+                            f"This case is not yet implemented.\nTry increasing the number of random permutations!",
+                    "update_b": False, "refresh_view": True}
+            # get the first error delta:
+            error_delta = list(self.intersects.keys())[0]
+            res = self.semi_automatic_solver.constrained_repair(error_delta=np.frombuffer(error_delta, dtype="uint8"),
+                                                                possible_packets=[int(x) for x in
+                                                                                  self.intersects[error_delta]])
+            self.intersects[b"base"] = base
+            return {"info": f"{res}", "update_b": False, "refresh_view": True}
 
     def generate_permutations(self, num_shuffles, input_order, include_original=True):
         rng = np.random.default_rng()
@@ -136,16 +163,17 @@ class RandomShuffleRepair(FileSpecificRepair):
         # we add an additional solution where we update all rows i of b for which A[i] contains only 0:
         # we have to set b[i] to a zero vector AND A^-1[i] to a zero vector as well
         # -> then we can use the code as below!
-        modified_initial_sol = GEPP(self.solutions[0].A, self.solutions[0].b)
-        modified_initial_sol.chunk_to_used_packets = self.solutions[0].chunk_to_used_packets.copy()
-        for i, row in enumerate(modified_initial_sol.A):
-            if np.all(row == False):
-                # we found a row that is all 0, so we set b[i] to a zero vector AND A^-1[i] to a zero vector as well
-                modified_initial_sol.b[i] = np.zeros_like(modified_initial_sol.b[i])
-                modified_initial_sol.chunk_to_used_packets[i] = np.zeros_like(
-                    modified_initial_sol.chunk_to_used_packets[i])
-        self.solutions.append(modified_initial_sol)
-        self.perms.append(self.perms[0])
+        if self.modified_initial_sol is None:
+            self.modified_initial_sol = GEPP(self.solutions[0].A, self.solutions[0].b)
+            self.modified_initial_sol.chunk_to_used_packets = self.solutions[0].chunk_to_used_packets.copy()
+            for i, row in enumerate(self.modified_initial_sol.A):
+                if np.all(row == False):
+                    # we found a row that is all 0, so we set b[i] to a zero vector AND A^-1[i] to a zero vector as well
+                    self.modified_initial_sol.b[i] = np.zeros_like(self.modified_initial_sol.b[i])
+                    self.modified_initial_sol.chunk_to_used_packets[i] = np.zeros_like(
+                        self.modified_initial_sol.chunk_to_used_packets[i])
+            self.solutions.append(self.modified_initial_sol)
+            self.perms.append(self.perms[0])
 
         unique_diffs = np.zeros((1, self.semi_automatic_solver.decoder.GEPP.b.shape[1]), dtype="uint8")
         for sol_i, solution in enumerate(self.solutions[1:]):
@@ -274,7 +302,12 @@ class RandomShuffleRepair(FileSpecificRepair):
                         "info": f"{info_str}Found {len(self.intersects)} corrupt packets: #{[self.intersects[i][0] for i in self.intersects]}",
                         "chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True}
                 else:
-                    info_str = f" Only partial solutions found, try increasing the number of permutations: {self.intersects} "
+                    # create a string containing self.intersects values and the key in a new line:
+                    res_str = ""
+                    for key, value in self.intersects.items():
+                        res_str += f"{len(value)} possible Packets: {value}\nError delta: {key}\n"
+                    info_str = f" Only partial solutions found, try increasing the number of permutations " \
+                               f"or perform multi-file automatic repair : \n{res_str}"
                     self.intersects[b'base'] = base
         if len(possible_packets) > 1 and len(self.intersects) > 1:
             if self.semi_automatic_solver.multi_error_packets_mode:
@@ -288,8 +321,7 @@ class RandomShuffleRepair(FileSpecificRepair):
             info_str = "Found no corrupt packet: The LES seems to be correct (or the corrupt packet cannot be described by a linear combination of other packets)."
             # we could use this information to remove all packets that do HAVE a linear combination of other packets.
         return {"info": info_str, "update_b": False, "refresh_view": True}
-        #TODO: we want to update our solutions with the new information:
-        # for a partial solution we may want to show the used which packets / rows are correct and which are incorrect!
+
     def is_compatible(self, meta_info):
         # upload (offline repair) is always possible...
         rank_augmented_matrix = self.semi_automatic_solver.calculate_rank_augmented_matrix()
@@ -298,12 +330,14 @@ class RandomShuffleRepair(FileSpecificRepair):
     def get_ui_elements(self):
         return {"btn-shuffle-find-packet": {"type": "button", "text": "Find corrupt packet by shuffling",
                                             "callback": self.find_packet_shuffle, "updates_b": False},
-                "btn-shuffle-repair": {"type": "button", "text": "Attempt automatic repair",
+                "btn-shuffle-repair": {"type": "button", "text": "Automatic repair (single-packet)",
                                        "callback": self.repair, "updates_b": False},
+                "btn-try-partial-repair": {"type": "button", "text": "Automatic repair (multi-file)",
+                                           "callback": self.partial_repair, "updates_b": False},
                 "txt-number-of-shuffles": {"type": "int",
                                            "text": "Number of random permutations to perform",
                                            "default": 5, "callback": self.update_num_shuffle,
-                                           "updates_b": False}
+                                           "updates_b": False},
                 }
 
     def update_num_shuffle(self, *args, **kwargs):

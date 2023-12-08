@@ -22,10 +22,12 @@ Automatic mode:
         IF WE BRUTEFORCE THE PACKET WE CANT DIRECTLY USE THE CRC (we must always perform a belief propagation / gauss elimination) - this is slower
 """
 import os
+import shutil
 import typing
 from functools import reduce
 from io import BytesIO
 from itertools import combinations
+from pathlib import Path
 from time import sleep
 import numpy as np
 import magic
@@ -45,6 +47,8 @@ from numpy.linalg import matrix_rank
 
 class SemiAutomaticReconstructionToolkit:
     def __init__(self, decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder]):
+        self.last_chunk_len_format = "I"
+        self.checksum_len_format = None
         self.decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder] = decoder
         decoder.read_all_before_decode = True
         self.headerChunk: typing.Optional[HeaderChunk] = None
@@ -87,6 +91,46 @@ class SemiAutomaticReconstructionToolkit:
                 # if the corrupt packet is used by this chunk
                 # xor the chunk with the chunk_diff
                 self.decoder.GEPP.b[i] = helper.xor_numpy(self.decoder.GEPP.b[i], chunk_diff)
+
+    def constrained_repair(self, error_delta, possible_packets, working_dir="constrained_repaired"):
+        """
+        Try to repair the file in the case of multiple possible corrupt packets with a known error delta
+        If there is a header chunk with a checksum, the checksum will be used to verify the repair, otherwise all
+        solutions will be stored and the user can select the correct one.
+        @param error_delta: the error delta
+        @param possible_packets: list of possible corrupt packets
+        """
+        bkp_b = self.decoder.GEPP.b.copy()
+        res = ""
+        if Path(working_dir).exists():
+            shutil.rmtree(working_dir)
+        # create the folder working_dir:
+        Path(working_dir).mkdir(parents=True, exist_ok=True)
+        for corrupt_packet_id in possible_packets:
+            for i in range(self.decoder.GEPP.chunk_to_used_packets.shape[0]):
+                if self.decoder.GEPP.chunk_to_used_packets[i, corrupt_packet_id]:
+                    # if the corrupt packet is used by this chunk
+                    # xor the chunk with the chunk_diff
+                    self.decoder.GEPP.b[i] = helper.xor_numpy(self.decoder.GEPP.b[i], error_delta)
+            self.parse_header(self.last_chunk_len_format, checksum_len_format=self.checksum_len_format)
+            if self.headerChunk is not None and self.headerChunk.checksum_len_format is not None:
+                is_correct = self.is_checksum_correct()
+            else:
+                is_correct = False
+            try:
+                filename = self.decoder.saveDecodedFile(return_file_name=True, print_to_output=False)
+            except ValueError as ve:
+                filename = ve.args[1]
+            _file = Path(filename)
+            stem = ("CORRECT_" if is_correct else "") + _file.stem + f"_{corrupt_packet_id}"
+            new_filename = Path(working_dir + "/" + stem + _file.suffix)
+            new_filename.parents[0].mkdir(parents=True, exist_ok=True)
+            _file = _file.rename(new_filename)
+            res += f"{_file.name}, "
+            self.decoder.GEPP.b = bkp_b.copy()
+            if is_correct:
+                return f"Found a correct CRC. Saved to folder {working_dir}: {filename}"
+        return f"Saved {len(possible_packets)} results to folder {working_dir}: {res}"
 
     def get_possible_invalid_chunks_from_common_packets(self, _common_packets: typing.List[bool]) -> typing.List[bool]:
         """
@@ -175,6 +219,8 @@ class SemiAutomaticReconstructionToolkit:
         """
         shows the content of decoder.b with borders after every n-th symbol
         """
+        self.checksum_len_format = checksum_len_format
+        self.last_chunk_len_format = last_chunk_len_format
         if self.decoder.GEPP is not None:
             if self.initial_A is None:
                 # create an inital backup of the GEPP
@@ -190,7 +236,7 @@ class SemiAutomaticReconstructionToolkit:
                 file_name = self.headerChunk.get_file_name().decode("utf-8")
                 if self.headerChunk.data[-1] != 0x00:
                     raise RuntimeError("Headerchunk is not null terminated!" +
-                                    "Either the headerchunk is corrupt or no headerchunk was used!")
+                                       "Either the headerchunk is corrupt or no headerchunk was used!")
             except RuntimeError as ex:
                 print("Warning:", ex)
         file_name = file_name.split("\x00")[0]

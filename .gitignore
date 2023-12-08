@@ -357,3 +357,4 @@ TSWLatexianTemp*
 *.LT_DNA
 .OUTFILES/**
 reordered_solution/**
+constrained_repaired/**
