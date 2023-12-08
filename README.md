@@ -13,7 +13,7 @@ However, the concept behind this tool could be used for any fountain-code based 
 
 # Requirements
 
-Fot the installation, Python 3.8 (or newer) and pip (we recommend 22.1.2 or newer) is required 
+Fot the installation, Python 3.8 (or newer) and pip (we recommend 22.1.2 or newer) is required
 The software has been tested on Ubuntu 20.04, Ubuntu 22.04 and Windows 11, but should work on any system supporting
 Python 3.
 
@@ -392,8 +392,13 @@ The plugin is only active in this case.
   equally, all packets that have not differing bytes must either both have or have not used the corrupt packet to reduce
   the row.
   Using enough of these information, the corrupt packet can be identified.
-- "_Attempt automatic repair_": This will use the technique described above to attempt an automatic repair. The error
+- "_Attempt automatic repair (single-packet)_": This will use the technique described above to attempt an automatic repair. The error
   delta can be directly calculated from one of the differing set of the same row.
+- "_Automatic Repair (multi-file)_" if, after "Finding corrupt packet by shuffling", there are multiple packets which
+  might be the corrupt packet, this will create and save all possible repaired versions of the file. 
+  If the header-chunk of the NOREC4DNA encoding exists and contains a file-wide checksum, this will automatically detect
+  the version which produces the correct checksum.
+  This might improve the recovery speed as generating more permutations will increase the runtime.
 
 ![random_shuffle.png](documentation/random_shuffle.png)
 
