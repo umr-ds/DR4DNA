@@ -233,7 +233,11 @@ class SemiAutomaticReconstructionToolkit:
         file_name = "DEC_" + os.path.basename(self.decoder.file) if self.decoder.file is not None else "RU10.BIN"
         if self.headerChunk is not None:
             try:
-                file_name = self.headerChunk.get_file_name().decode("utf-8")
+                try:
+                    file_name = self.headerChunk.get_file_name().decode("utf-8")
+                except UnicodeDecodeError:
+                    raise RuntimeError("Filename in headerchunk is not utf-8 encoded!")
+                    # file_name = self.headerChunk.get_file_name().decode("latin-1")
                 if self.headerChunk.data[-1] != 0x00:
                     raise RuntimeError("Headerchunk is not null terminated!" +
                                        "Either the headerchunk is corrupt or no headerchunk was used!")

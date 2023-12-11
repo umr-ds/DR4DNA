@@ -343,7 +343,7 @@ class RandomShuffleRepair(FileSpecificRepair):
     def update_num_shuffle(self, *args, **kwargs):
         num_shuffle = kwargs["c_ctx"].triggered[0]["value"]
         # we could check if kwargs["c_ctx"].triggered[X] has a prop_io equal to the textbox's id
-        if num_shuffle < 1:
+        if num_shuffle is None or num_shuffle < 1:
             self.num_shuffles = self.gepp.b[0]
         else:
             self.num_shuffles = num_shuffle
