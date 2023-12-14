@@ -21,6 +21,7 @@ nonprintable = itertools.chain(range(0x00, 0x20), range(0x7f, 0xa0))
 
 class UploadRepair(FileSpecificRepair):
     # TODO: we might want to create and save __all__ possible results for a modified chunk
+    # (however, this can already be done using partial repair / multi file)
     # example: we change a byte in a (or multiple) chunk(s) and we want to decode assuming the error happening in all possible packets.
     # to further limit the number of packets we might aswell use the chunktags to pinpoint the corrupt packet!
     def __init__(self, *args, **kwargs):

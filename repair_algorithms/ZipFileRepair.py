@@ -141,7 +141,7 @@ class ZipFileRepair(FileSpecificRepair):
 
     def is_compatible(self, meta_info):
         # parse magic info string:
-        return "zip" in meta_info.lower()  # TODO check...
+        return "zip" in meta_info.lower()
 
     def repair(self, *args, **kwargs):
         if self.zip_structure is None or self.parser_error_matrix is None:
@@ -309,7 +309,7 @@ class ZipFileRepair(FileSpecificRepair):
                 # general purpose bit flag:
                 if section.body.header.flags.reserved_1 != 0 or section.body.header.flags.reserved_2 != 0 or \
                         section.body.header.flags.reserved_3 != 0 or section.body.header.flags.reserved_4 != 0:
-                    # todo check if offset is correct for all reserved fields
+                    # we might need to check if offset is correct for all reserved fields
                     error_counter += update_error_pos(section.body.header.start + 2 + 1,
                                                       section.body.header.start + 2 + 2, [1])
                 # if section.body.header.general_purpose_bit_flag & 0b00000011101011 == 0:
@@ -318,6 +318,7 @@ class ZipFileRepair(FileSpecificRepair):
                 #    error_counter += update_error_pos(section.body.header.start + 2, section.body.header.start + 4, [1] * 4)
 
                 # TODO: make some basic sanity check that these numbers are not too large:
+                # these are currently inactive as we have to make sure that all zip implementations correctly use these:
                 # file last modification time:
                 # error_pos[section.header.start + 10:section.header.start + 10 + 2] = [0] * 2
                 # file last modification date:
@@ -435,7 +436,7 @@ class ZipFileRepair(FileSpecificRepair):
                 else:
                     error_counter += update_error_pos(section.body.start + 16, section.body.start + 16 + 2, [0] * 2)
             if error_counter > 4:
-                # TODO find best magic number...
+                # TODO: we might want to find best (closest) magic number...
                 error_pos = error_pos_bkp
                 self.reconstructed_zip_bytes = reconstructed_zip_bytes_bkp
         if start:
@@ -467,7 +468,6 @@ class ZipFileRepair(FileSpecificRepair):
         return np.array(error_pos).reshape(-1, self.gepp.b.shape[1])
 
     def compare_sections(self, error_pos, sections):
-        # TODO. this is not DRY:
         def update_error_pos(_start, _end, new_error_pos=None, corrected_bytes=None, overwrite=False):
             offset = start * self.gepp.b.shape[1]
             _parser_error_pos = self.parser_error_matrix[offset + _start: offset + _end]
@@ -666,7 +666,6 @@ class ZipFileRepair(FileSpecificRepair):
                             #        error_counter += update_error_pos(central_dir_section.body.start + 34,
                             #                         central_dir_section.body.start + 34 + 2, [1] * 2)
                             # file comment len:
-                            # TODO weiter machen mit richtigem offset
                             next_signature = self.get_raw_bytes(
                                 central_dir_section.body.start + 42 + central_dir_section.body.len_file_name
                                 + central_dir_section.body.len_extra + central_dir_section.body.len_comment, 2)
@@ -689,7 +688,7 @@ class ZipFileRepair(FileSpecificRepair):
                                                                   central_dir_section.body.start + 36 + 2, [1] * 2)
 
                             # internal file attributes:
-                            # TODO: check bit 1 and 3-16 (reserved/unused!)
+                            # TODO: test if we can check bit 1 and 3-16 (reserved/unused!)
                             # external file attributes:
                             # NO way to check...
                             # error_counter += update_error_pos(section.body.header.start + 18, section.body.header.start + 18 + 4, [0] * 4)
@@ -700,7 +699,7 @@ class ZipFileRepair(FileSpecificRepair):
                                 error_counter += update_error_pos(central_dir_section.start + 42,
                                                                   central_dir_section.start + 42 + 4,
                                                                   [0] * 4)
-                                # TODO: we have to go trough all local file headers and invalidate the one BEFORE the reference...
+                                # TODO: go trough all local file headers and invalidate the one BEFORE the reference...
                             else:
                                 # either the reference is wrong or this was no real central directory entry!
                                 error_counter += update_error_pos(central_dir_section.start + 42,
@@ -718,6 +717,7 @@ class ZipFileRepair(FileSpecificRepair):
                 # TODO we might be able to match it with an unmatched central directory entry by comparing
                 #  other entries such as the filename
                 #  alternatively we choose the central directory entry with the smallest edit distance
+                # This might further increase the recovery chance but may increase the complexity.
                 pass
         return error_pos
 
@@ -918,7 +918,7 @@ class ZipFileRepair(FileSpecificRepair):
         flat_signature_positions = [item for sublist in flat_signature_positions for item in sublist]
         sections = []
         for start_offset in flat_signature_positions:
-            # todo: create a copy of error_pos for each section canididate and merge them at the end (only if the section was "valid")
+            # create a copy of error_pos for each section canididate and merge them at the end (only if the section was "valid")
             # make sure the sections are not overlapping and if they are, choose the one that produces the least errors
 
             error_pos_bkp = error_pos.copy()
