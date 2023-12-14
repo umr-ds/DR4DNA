@@ -68,7 +68,7 @@ class LangaugeToolTextRepair(FileSpecificRepair):
 
         # WARNING: this method is rather slow but will yield better results than the character based method
         # IF the words stored in the file are in the used dictionary
-        # TODO change language according to "language" parameter:
+        # change language according to "language" parameter:
         if self.tool is None or self.tool.language.normalized_tag != lang_to_LanguageTool.get(language, "en-US"):
             self.tool = language_tool_python.LanguageTool(lang_to_LanguageTool.get(language, "en-US"))
         # , config={'disabledRuleIds': "DROP_DOWN,SOME_OF_THE,THE_SUPERLATIVE,UPPERCASE_SENTENCE_START,DOPPELPUNKT_GROSS,KOMMA_ZWISCHEN_HAUPT_UND_NEBENSATZ_2,VIELZAHL_PLUS_SINGULAR,EMPFOHLENE_ZUSAMMENSCHREIBUNG,SEMIKOLON_VOR_ANFUEHRUNGSZEICHEN,DURCHEINANDER"})
@@ -91,7 +91,7 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         matches = self.tool.check(blob)
         for matching_rule in matches:
             offset = matching_rule.offset
-            # TODO: extend error_length to include non-printable characters behind the error,
+            # TODO: we might want to extend error_length to include non-printable characters behind the error,
             #  then iterate over range(error_length, error_length + len(offset)) to find the correct word
             error_length = matching_rule.errorLength
             if matching_rule.category == "TYPOS" or matching_rule.ruleIssueType == "misspelling":

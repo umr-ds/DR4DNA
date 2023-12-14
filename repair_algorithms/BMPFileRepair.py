@@ -68,7 +68,6 @@ class BmpFileRepair(FileSpecificRepair):
                         dtype=error_pos.dtype)
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
 
-                # TODO: check if correct:
                 if res.file_hdr.reserved1 != 0:
                     self.reconstructed_bmp_bytes[6] = 0
                     self.reconstructed_bmp_bytes[7] = 0
@@ -89,8 +88,6 @@ class BmpFileRepair(FileSpecificRepair):
                         [a ^ b for a, b in zip(self.bmp_bytes[10:14], self.reconstructed_bmp_bytes[10:14])],
                         dtype=error_pos.dtype)
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
-                # TODO: depends: right now this is only correct for 16bit
-                # check up res.dib_info.header.bits_per_pixel!
                 mask_mask = res.dib_info.color_mask_red ^ res.dib_info.color_mask_blue ^ res.dib_info.color_mask_alpha ^ res.dib_info.color_mask_green
                 if mask_mask != 2 ** res.dib_info.header.bits_per_pixel - 1 or (
                         res.dib_info.header.bits_per_pixel == 32 and mask_mask | 0b11100000000000000000000000000000 != 2 ** res.dib_info.header.bits_per_pixel - 1):
@@ -147,7 +144,6 @@ class BmpFileRepair(FileSpecificRepair):
                 "refresh_view": True, "chunk_tag": self.chunk_tag}
 
     def reload_image(self, *args, **kwargs):
-        # todo: load canvas_json from args + chunk_tag to find the invalid packet
         self.parser_error_matrix = None
         self.no_inspect_chunks = self.gepp.b.shape[0]
         if self.reconstructed_bmp_bytes is not None:
@@ -165,7 +161,6 @@ class BmpFileRepair(FileSpecificRepair):
 
     def is_compatible(self, meta_info, *args, **kwargs):
         # parse magic info string:
-        # TODO: add check for filename / extension
         return meta_info == "Bitmap" or "PC bitmap" in meta_info
 
     def set_image_width(self, width, *args, **kwargs):
@@ -402,7 +397,7 @@ class BmpFileRepair(FileSpecificRepair):
         self.error_matrix = self.error_matrix.reshape(-1, self.gepp.b.shape[1])
         res = self.find_errors_tags()
         res["updates_canvas"] = True
-        res["image_content"] = None  # todo: add line to each chunk that is incorrect?
+        res["image_content"] = None
         return {"updates_canvas": True, "image_content": None}
 
 

@@ -355,6 +355,41 @@ class SemiAutomaticReconstructionToolkit:
         return None
 
 
+
+    def repair_and_store_by_packet(self, chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None):
+        # this function will be used if we have multiple invalid packets (and corrected chunks) to save multiple version,
+        # where each saved version used a different possible packet to repair the chunk.
+        bkp_A = self.decoder.GEPP.A.copy()
+        bkp_b = self.decoder.GEPP.b.copy()
+        self.manual_repair(chunk_id, packet_id, hex_value)
+        working_dir = "multi_file_repair"
+        if clear_working_dir:
+            # delete the folder working_dir if it exists:
+            if Path(working_dir).exists():
+                shutil.rmtree(working_dir)
+            # create the folder working_dir:
+            Path(working_dir).mkdir(parents=True, exist_ok=True)
+        # we might have to check if header chunk is used!
+        self.parse_header("I")
+        if self.headerChunk is not None and self.headerChunk.checksum_len_format is not None:
+            is_correct = self.is_checksum_correct()
+        else:
+            if correctness_function is not None:
+                is_correct = correctness_function(self.decoder.GEPP.b)
+            else:
+                is_correct = False
+        try:
+            filename = self.decoder.saveDecodedFile(return_file_name=True, print_to_output=False)
+        except ValueError as ve:
+            filename = ve.args[1]
+        _file = Path(filename)
+        stem = ("CORRECT_" if is_correct else "") + _file.stem + f"_{chunk_id}_{packet_id}"
+        _new_file = _file.rename(Path(working_dir + "/" + stem + _file.suffix))
+        self.decoder.GEPP.A = bkp_A
+        self.decoder.GEPP.b = bkp_b
+        return f"{_new_file.name}"
+
+
 if __name__ == "__main__":
     x = ConfigReadAndExecute("NOREC4DNA/logo.jpg_Fri_Jan__7_13_18_39_2022.ini").execute(return_decoder=True)[0]
     semi_automatic_solver = SemiAutomaticReconstructionToolkit(x)

@@ -371,7 +371,7 @@ class Zip(KaitaiStruct):
             position_of_signature = Zip.find_signtures(self._raw_file_name)
             if len(self._raw_file_name) != self.len_file_name or position_of_signature is not None:
                 # filename-length should be:
-                # filename_length = filename_length - position_of_signature - len_extra - len_comment (TODO: check if "-1" ???)
+                # filename_length = filename_length - position_of_signature - len_extra - len_comment
                 expected_val = self.len_file_name - max(0,
                                                         self.len_file_name - position_of_signature - self.len_extra - self.len_comment)
                 raise InvalidDataException("/types/filename/invalid", len_filename_io_pos, expected=expected_val)
@@ -490,7 +490,7 @@ class Zip(KaitaiStruct):
             self.file_mod_time = dos_datetime.DosDatetime(_io__raw_file_mod_time, self, self._root)
             self.crc32 = self._io.read_u4le()
             self.len_body_compressed = self._io.read_u4le()
-            # TODO we should check if len_body_compress is unreasonalbe (e.g. if there is a valid signature in it)
+            # TODO we may want to check if len_body_compress is unreasonable (e.g. if there is a valid signature in it)
             self.len_body_uncompressed = self._io.read_u4le()
             len_filename_io_pos = self._io.pos()
             self.len_file_name = self._io.read_u2le()

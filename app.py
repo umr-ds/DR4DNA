@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-# Run this app with `python app.py` and
+# Run this app using: `python app.py <file.ini>` and
 # visit http://127.0.0.1:8050/ in your web browser.
 import argparse
 import copy
-import os
 import shutil
 import string
 import typing
@@ -15,7 +14,7 @@ from dash_extensions.enrich import html, dcc, State, MATCH, ALL, Output, DashPro
 from dash import ctx
 import dash_daq as daq
 from dash_canvas.DashCanvas import DashCanvas
-from dash_canvas.utils.io_utils import image_string_to_PILImage, array_to_data_url
+from dash_canvas.utils.io_utils import array_to_data_url
 
 from app_callbacks import callbacks
 from repair_algorithms import *  # NOSONAR
@@ -23,7 +22,6 @@ from repair_algorithms.PluginManager import PluginManager
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
-from repair_algorithms.LangaugeToolTextRepair import LangaugeToolTextRepair
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
 
 
@@ -36,8 +34,6 @@ LAST_CHUNK_LEN_FORMAT = "I"
 EXTERNAL_STYLESHEETS = ["https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"]
 META_TAGS = [{"name": "viewport", "content": "width=device-width, initial-scale=1"}]
 
-app = DashProxy(__name__, external_stylesheets=EXTERNAL_STYLESHEETS, meta_tags=META_TAGS,
-                prevent_initial_callbacks=True, transforms=[MultiplexerTransform()])
 white_button_style = {'backgroundColor': 'white'}
 red_button_style = {'backgroundColor': 'red'}
 green_button_style = {'backgroundColor': 'green'}
@@ -60,26 +56,36 @@ show_canvas = False
 chunk_tag = []
 column_tag = []
 
-input_callback_handler = [Input('repair-button', 'n_clicks'), Input('repair-reorder-button-possible', 'n_clicks'),
-                          Input('repair-id-input-box', 'value'), Input('hex-repair-input', 'value'),
-                          Input('txt-repair-input', 'value'), Input('repair-chunks-button', 'n_clicks'),
-                          Input('analyze-button', 'n_clicks'), Input('repair-exclusion-button', 'n_clicks'),
-                          Input('repair-reorder-button', 'n_clicks'), Input('reset-chunk-tag-button', 'n_clicks'),
-                          Input('calculate-rank-button', 'n_clicks'), Input('save-button', 'n_clicks'),
+canvas_list = []
+plugin_manager = PluginManager()
+plugin_manager.plugin_instances.clear()
+force_load_plugins = []
+all_plugins_childs = []
+
+app = DashProxy(__name__, external_stylesheets=EXTERNAL_STYLESHEETS, meta_tags=META_TAGS,
+                prevent_initial_callbacks=True, transforms=[MultiplexerTransform()])
+
+input_callback_handler = [Input('repair-button', 'n_clicks'),
+                          Input('repair-reorder-button-possible', 'n_clicks'),
+                          Input('repair-id-input-box', 'value'),
+                          Input('hex-repair-input', 'value'),
+                          Input('txt-repair-input', 'value'),
+                          Input('repair-chunks-button', 'n_clicks'),
+                          Input('analyze-button', 'n_clicks'),
+                          Input('repair-exclusion-button', 'n_clicks'),
+                          Input('repair-reorder-button', 'n_clicks'),
+                          Input('reset-chunk-tag-button', 'n_clicks'),
+                          Input('calculate-rank-button', 'n_clicks'),
+                          Input('save-button', 'n_clicks'),
                           Input('packet-tag-chunk-invalid-button', 'n_clicks'),
-                          Input('packet-tag-chunk-valid-button', 'n_clicks'), Input('mode-switch', 'value'),
+                          Input('packet-tag-chunk-valid-button', 'n_clicks'),
+                          Input('mode-switch', 'value'),
                           Input('colorblind-switch', 'value'),
                           Input({'type': 'forceload-plugin-button', 'index': ALL}, 'n_clicks'),
                           Input({'type': 'plugin_io_upload-data', 'index': ALL}, 'contents'),
                           Input({'type': 'plugin_io_btn', 'index': ALL}, 'n_clicks'),
                           Input({'type': 'plugin_io_value', 'index': ALL}, 'value'),
                           Input({'type': 'plugin_io_upload-data', "index": ALL}, 'contents')]
-
-canvas_list = []
-plugin_manager = PluginManager()
-plugin_manager.plugin_instances.clear()
-force_load_plugins = []
-all_plugins_childs = []
 
 
 def init_globals(semi_automatic_solver):
@@ -94,7 +100,7 @@ def init_globals(semi_automatic_solver):
         force_load_plugins.append(html.Button(plugin_instance.__class__.__name__, id={"type": "forceload-plugin-button",
                                                                                       "index": plugin_instance.__class__.__name__}))
         if plugin_instance.is_compatible(semi_automatic_solver.predict_file_type()):
-            plugin_childs = load_plugin(plugin_instance)
+            plugin_childs = plugin_manager.load_plugin(plugin_instance)
             if len(plugin_childs) > 0:
                 div = html.Div(id="plugin_" + plugin_instance.__class__.__name__.lower(), className="box",
                                children=plugin_childs)
@@ -205,11 +211,6 @@ def update_column_tag(tag):
     column_tag = tag
 
 
-def update_single_element_column_tag(key, value):
-    global column_tag
-    column_tag[key] = value
-
-
 def reset_column_tag():
     update_column_tag([0 for _ in range(len(get_column_tag()))])
 
@@ -232,87 +233,6 @@ def update_single_element_chunk_tag(key, value):
 def reset_chunk_tag():
     update_chunk_tag([0 for _ in range(len(get_chunk_tag()))])
 
-
-def load_plugin(plugin_inst):
-    global input_callback_handler, show_canvas
-
-    plugin_inst.on_load()
-
-    # Get the UI elements from the plugin instance:
-    ui: typing.Dict[
-        str, typing.Dict[str, typing.Union[str, bool, typing.Callable]]] = plugin_inst.get_ui_elements()
-    # Initialize a list to store the plugin's child elements:
-    _plugin_childs = [html.H4(f'Plugin: "{plugin_inst.__class__.__name__}"', className="tag")]
-
-    # Iterate over the UI elements and create the corresponding Dash elements:
-    for key, value in ui.items():
-        if value["type"] == "button":
-            _plugin_childs.append(
-                html.Button(value["text"], id={'type': 'plugin_io_btn', 'index': key}, className="button"))
-            if "updates_canvas" in value and value["updates_canvas"]:
-                show_canvas = True
-        elif value["type"] == "int":
-            default_value = 0 if "default" not in value else value["default"]
-            _plugin_childs.append(html.Div([html.Label(value["text"], className="label"),
-                                            html.Div(
-                                                [dcc.Input(id={'type': 'plugin_io_value', 'index': key}, type="number",
-                                                           className="input", value=default_value), ],
-                                                className="control")], className="field"))
-            if "updates_canvas" in value and value["updates_canvas"]:
-                show_canvas = True
-        elif value["type"] == "text":
-            _plugin_childs.append(html.Div([html.Label(value["text"], className="label"),
-                                            html.Div(
-                                                [dcc.Input(id={'type': 'plugin_io_value', 'index': key}, type="text",
-                                                           className="input"), ],
-                                                className="control")], className="field"))
-            if "updates_canvas" in value and value["updates_canvas"]:
-                show_canvas = True
-        elif value["type"] == "canvas":
-            show_canvas = True
-        elif value["type"] == "kaitai_view":
-            _plugin_childs.append(
-                html.Button(value["text"], id={'type': 'plugin_io_btn', 'index': key}, className="button"))
-        elif value["type"] == "upload":
-            _plugin_childs.append(html.Div([
-                dcc.Upload(
-                    id={'type': 'plugin_io_upload-data', 'index': key},
-                    children=html.Div([
-                        'Drag and Drop or ',
-                        html.A('Select Files')
-                    ]),
-                    style={
-                        'width': '100%',
-                        'height': '60px',
-                        'lineHeight': '60px',
-                        'borderWidth': '1px',
-                        'borderStyle': 'dashed',
-                        'borderRadius': '5px',
-                        'textAlign': 'center',
-                        'margin': '10px'
-                    },
-                    # Don't allow multiple files to be uploaded
-                    multiple=False
-                ),
-                html.Div(id={'type': 'output-data-upload', 'index': key}),
-            ]))
-            if "updates_canvas" in value and value["updates_canvas"]:
-                show_canvas = True
-        elif value["type"] == "download":
-            _plugin_childs.append(dcc.Download(id={'type': 'plugin_io_download-data', 'index': key}))
-            _plugin_childs.append(
-                html.A('Download Data', id={'type': 'plugin_io_download', 'index': key}, className="button")
-            )
-        elif value["type"] == "toggle":
-            _plugin_childs.append(html.Div([html.Label(value["off_label"]),
-                                            daq.ToggleSwitch(id={'type': 'plugin_io_switch', 'index': key},
-                                                             label=value["label"],
-                                                             labelPosition='bottom', className="inline-switch"
-                                                             ), html.Label(value["on_label"])]))
-    return _plugin_childs
-
-
-# input_callback_handler.append(Input({'type': 'download', 'index': ALL}, 'n_clicks'))
 
 @app.callback(Output({'type': 'plugin_io_download-data', 'index': MATCH}, "data"),
               Input({'type': 'plugin_io_download', 'index': MATCH}, "n_clicks"),
@@ -389,15 +309,6 @@ def propagate_gepp_update():
                 propagete_chunk_tag_update()
 
 
-def get_language():
-    repair_tool = LangaugeToolTextRepair(semi_automatic_solver.decoder.GEPP)
-    lang = repair_tool.detect_language()
-    language = lang.lang if lang.confidence > 0.5 else "en"
-    print(f"Detected language: {language} with confidence {lang.confidence}")
-    x = repair_tool.find_error_region_by_words(language=language)
-    return x
-
-
 def repair_chunks(repair_id, hex_value):
     if sum(common_packets) != 1 and not semi_automatic_solver.multi_error_packets_mode:
         return html.Div("More than one packet still possible!"), dash.no_update, dash.no_update
@@ -417,40 +328,6 @@ def repair_chunks(repair_id, hex_value):
     return recalculate_view()
 
 
-def repair_and_store_by_packet(chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None):
-    # this function will be used if we have multiple invalid packets (and corrected chunks) to save multiple version,
-    # where each saved version used a different possible packet to repair the chunk.
-    bkp_A = semi_automatic_solver.decoder.GEPP.A.copy()
-    bkp_b = semi_automatic_solver.decoder.GEPP.b.copy()
-    semi_automatic_solver.manual_repair(chunk_id, packet_id, hex_value)
-    working_dir = "multi_file_repair"
-    if clear_working_dir:
-        # delete the folder working_dir if it exists:
-        if Path(working_dir).exists():
-            shutil.rmtree(working_dir)
-        # create the folder working_dir:
-        Path(working_dir).mkdir(parents=True, exist_ok=True)
-    # we might have to check if header chunk is used!
-    semi_automatic_solver.parse_header("I")
-    if semi_automatic_solver.headerChunk is not None and semi_automatic_solver.headerChunk.checksum_len_format is not None:
-        is_correct = semi_automatic_solver.is_checksum_correct()
-    else:
-        if correctness_function is not None:
-            is_correct = correctness_function(semi_automatic_solver.decoder.GEPP.b)
-        else:
-            is_correct = False
-    try:
-        filename = semi_automatic_solver.decoder.saveDecodedFile(return_file_name=True, print_to_output=False)
-    except ValueError as ve:
-        filename = ve.args[1]
-    _file = Path(filename)
-    stem = ("CORRECT_" if is_correct else "") + _file.stem + f"_{chunk_id}_{packet_id}"
-    _new_file = _file.rename(Path(working_dir + "/" + stem + _file.suffix))
-    semi_automatic_solver.decoder.GEPP.A = bkp_A
-    semi_automatic_solver.decoder.GEPP.b = bkp_b
-    return f"{_new_file.name}"
-
-
 @app.callback(
     Output({'type': 'e_row', 'index': MATCH}, 'style'),
     [Input({'type': 'e_row', 'index': MATCH}, 'n_clicks'),
@@ -459,7 +336,7 @@ def repair_and_store_by_packet(chunk_id, packet_id, hex_value, clear_working_dir
 def change_button_style(n_clicks, n_clicks2):
     clicked_line = ctx.triggered_id["index"]
     if get_chunk_tag()[clicked_line] == 3:
-        # the selected chunk is not decoded yet, return yellow and dont update the state.
+        # the selected chunk is not decoded yet, return yellow and don't update the state.
         return yellow_button_style
     update_single_element_chunk_tag(clicked_line, (get_chunk_tag()[clicked_line] + 1) % 3)
     if get_chunk_tag()[clicked_line] == 1:
@@ -542,13 +419,6 @@ def update_analytics(n):
         return dash.no_update
 
 
-def parse_contents(contents):
-    img = image_string_to_PILImage(contents)
-    pix = np.array(img)
-    img_content = array_to_data_url(pix)
-    return img_content
-
-
 @app.callback(Output('analyze-count-output', 'children'),
               Output('row_view', 'children'),
               Output("ls-loading-output-2", "children"),
@@ -590,7 +460,7 @@ def update_canvas_data(json_data):
     # Canvas style:
     Output("canvas", "style"),
     # Canvas data:
-    Output("dashCanvas", "image_content"),  # Output("dashCanvas", "json_data"),
+    Output("dashCanvas", "image_content"),
     Output("kaitai_view", "children"),
     State("packet-tag-chunk-input", "value"),
     State("dashCanvas", "json_data"),
@@ -618,7 +488,6 @@ def callback_handler(*args, **kwargs):
             for key, value in ui.items():
                 if trigger_id == key:
                     res = value["callback"](chunk_tag=get_chunk_tag(), c_ctx=c_ctx, *args, **kwargs)
-                    # res is a dict with (optional) keys: chunk_tag:typing.List[int], update_b:bool
                     update_b = False
                     refresh_view = True
                     for k, res_value in res.items():
@@ -635,17 +504,12 @@ def callback_handler(*args, **kwargs):
                         elif k == "canvas_data":
                             if "updates_canvas" in res and res["updates_canvas"]:
                                 # we may want to update all canvas data (the image including ALL tags/drawings)
-
                                 if "height" in res and "width" in res:
                                     canvas_height = res["height"]
                                     canvas_width = res["width"]
                                 canvas_image_content = array_to_data_url(res_value)
                         elif k == "kaitai_content":
-                            # if res["kaitai_content"] is not None:
-                            #    # set the corresponding div ({'type': 'plugin_io_value', 'index': key}) to the kaitai content
                             kaitai_view = res["kaitai_content"]
-                            # else:
-                            #    return html.Div()
                         elif k == "info":
                             info_str = res_value
 
@@ -664,8 +528,10 @@ def callback_handler(*args, **kwargs):
                                                 chunk_id in res_value:
                                             # packet _i_ was used to create chunk _chunk_id_,
                                             # thus we can back-propagate the repair to the packet:
-                                            tmp.append(repair_and_store_by_packet(chunk_id, i, res_value[chunk_id],
-                                                                                  len(tmp) == 0))
+                                            tmp.append(semi_automatic_solver.repair_and_store_by_packet(chunk_id, i,
+                                                                                                        res_value[
+                                                                                                            chunk_id],
+                                                                                                        len(tmp) == 0))
                                             if not generate_all:
                                                 break
                             res += f"{', '.join(tmp)}]"
@@ -687,8 +553,10 @@ def callback_handler(*args, **kwargs):
                                     # packet _i_ was used to create chunk _chunk_id_,
                                     # thus we can back-propagate the repair to the packet:
                                     tmp.append(
-                                        repair_and_store_by_packet(invalid_row, packet_to_repair, repaired_content_row,
-                                                                   len(tmp) == 0, correctness_function))
+                                        semi_automatic_solver.repair_and_store_by_packet(invalid_row, packet_to_repair,
+                                                                                         repaired_content_row,
+                                                                                         len(tmp) == 0,
+                                                                                         correctness_function))
                                     if not generate_all and any([x.startswith("CORRECT_") for x in tmp]):
                                         break
                             res += f"{', '.join(tmp)}]"
@@ -864,13 +732,13 @@ def callback_handler(*args, **kwargs):
         return (res, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
                 dash.no_update, dash.no_update,) + recalculate_view() + (
             dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
-    elif c_ctx.triggered_id is not None and not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id[
-        "type"] == "forceload-plugin-button":
+    elif (c_ctx.triggered_id is not None and not isinstance(c_ctx.triggered_id, str) and
+          c_ctx.triggered_id["type"] == "forceload-plugin-button"):
         canvas_style = dash.no_update
         for _plugin in plugin_manager.plugin_instances:
             if _plugin.__class__.__name__ == c_ctx.triggered_id["index"]:
                 _div = html.Div(id="plugin_" + _plugin.__class__.__name__.lower(), className="box",
-                                children=load_plugin(_plugin))
+                                children=plugin_manager.load_plugin(_plugin))
                 _plugin.on_load()
                 all_plugins_childs.append(_div)
                 canvas_style = {"display": "block"} if show_canvas else {"display": "none"}
@@ -945,13 +813,11 @@ def recalculate_view():
     return html.Div(poss_packet_str), html.Div(child_view), html.Div("")
 
 
-"""
-"""
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("ini", metavar="ini", type=str, help="config file (ini)")
-    args = parser.parse_args()
-    ini_file = args.ini
+    parsed_args = parser.parse_args()
+    ini_file = parsed_args.ini
 
     cfg_worker = ConfigReadAndExecute(ini_file)
     x = cfg_worker.execute(return_decoder=True, skip_solve=True)[0]
@@ -962,9 +828,9 @@ if __name__ == '__main__':
         CHECKSUM_LEN_FORMAT = None
     init_globals(semi_automatic_solver)
     callbacks(app)
-    app.run(host="0.0.0.0", dev_tools_ui=True, dev_tools_hot_reload=False, debug=False, threaded=True,
+    app.run(threaded=True, host="0.0.0.0")
+    """
+    # to enable debugging / dev tools:
+    app.run(host="0.0.0.0", dev_tools_ui=True, dev_tools_hot_reload=True, debug=True, threaded=True,
             dev_tools_hot_reload_interval=10000, dev_tools_hot_reload_watch_interval=10000)
-    """, dev_tools_silence_routes_logging=None,
-        dev_tools_hot_reload=None, dev_tools_hot_reload_interval=None, dev_tools_hot_reload_watch_interval=None,
-        dev_tools_hot_reload_max_retry=None)  # _server(debug=True)
     """
