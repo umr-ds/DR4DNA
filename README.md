@@ -49,8 +49,8 @@ DR4DNA can be used using Docker. This will automatically install all required de
 ## Using the docker image from DockerHub:
 
 ```bash
-TBD
-# docker run -v ./working_dir:/DR4DNA/working_dir -p 8050:8050 umr-ds/dr4dna
+docker pull mosla/dr4dna
+docker run -v ./working_dir:/DR4DNA/working_dir -p 8050:8050 umr-ds/dr4dna
 ```
 
 ## Building from source:
