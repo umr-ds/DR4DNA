@@ -50,7 +50,7 @@ DR4DNA can be used using Docker. This will automatically install all required de
 
 ```bash
 docker pull mosla/dr4dna
-docker run -v ./working_dir:/DR4DNA/working_dir -p 8050:8050 umr-ds/dr4dna
+docker run -v ./working_dir:/DR4DNA/working_dir -p 8050:8050 mosla/dr4dna
 ```
 
 ## Building from source:
@@ -72,7 +72,7 @@ working_dir/input.ini" with the corresponding fasta file in the same folder!
 - Run the docker image using the following command:
 
 ```bash
-docker run -v ./<working_dir>:/DR4DNA/working_dir -p 8050:8050 umr-ds/dr4dna
+docker run -v ./<working_dir>:/DR4DNA/working_dir -p 8050:8050 mosla/dr4dna
 ```
 
 where <working_dir> is the name of the folder containing the input files!
