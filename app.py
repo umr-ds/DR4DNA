@@ -2,27 +2,28 @@
 # Run this app using: `python app.py <file.ini>` and
 # visit http://127.0.0.1:8050/ in your web browser.
 import argparse
-import copy
-import shutil
 import string
 import typing
-from pathlib import Path
 
 import numpy as np
 import dash_extensions.enrich as dash
 from dash_extensions.enrich import html, dcc, State, MATCH, ALL, Output, DashProxy, Input, MultiplexerTransform
 from dash import ctx
-import dash_daq as daq
-from dash_canvas.DashCanvas import DashCanvas
-from dash_canvas.utils.io_utils import array_to_data_url
 
 from app_callbacks import callbacks
+from callback_handlers import PluginCallbackHandler, ButtonCallbackHandler, RepairCallbackHandler
+from layout import gen_app_layout
 from repair_algorithms import *  # NOSONAR
 from repair_algorithms.PluginManager import PluginManager
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
+
+# Global callback handler instances (will be initialized after globals are set up)
+plugin_handler: typing.Optional[PluginCallbackHandler] = None
+button_handler: typing.Optional[ButtonCallbackHandler] = None
+repair_handler: typing.Optional[RepairCallbackHandler] = None
 
 
 def update_point(trace, points, selector):
@@ -110,95 +111,9 @@ def init_globals(semi_automatic_solver):
                                                                             checksum_len_format=CHECKSUM_LEN_FORMAT)):
         child.append(html.Div([html.H4(f"{str(i).zfill(8)}", id={'type': 'e_row_h', 'index': i}), x],
                               id={'type': 'e_row', 'index': i}, className="entry_row"))
-    app.layout = html.Div(children=[dcc.Interval(id='interval-component', interval=1 * 1000,  # in milliseconds
-                                                 n_intervals=0),
-                                    # Genereic overview:
-                                    html.H1(children='DR4DNA', id="analytics-input"),
-                                    html.H3(children=semi_automatic_solver.predict_file_type(), id="analytics-output"),
-                                    html.H3(children="Possible invalid packets:", id="analyze-count-output",
-                                            className="box"),
-                                    html.Div([dcc.Loading(id="ls-loading-2", type="circle",
-                                                          children=[html.Div([html.Div(id="ls-loading-output-2")])])]),
-                                    # Single- vs Multi-Error-Mode:
-                                    html.Div([html.Label("Single"),
-                                              daq.ToggleSwitch(id="mode-switch",
-                                                               label='Currupt packet mode',
-                                                               labelPosition='bottom', className="inline-switch"
-                                                               ), html.Label("Multiple"),
-                                              ]),
-                                    # Colorblind switch:
-                                    html.Div([html.Label("Normal mode"),
-                                              daq.ToggleSwitch(id="colorblind-switch",
-                                                               label='Colorblind mode',
-                                                               labelPosition='bottom', className="inline-switch"
-                                                               ), html.Label("Colorblind mode"),
-                                              ]),
-                                    # Manage + repair Buttons:
-                                    html.Div([
-                                        html.Button('Calculate rank of the LES', id='calculate-rank-button',
-                                                    className="button"),
-                                        html.Button('Reset chunk tag', id='reset-chunk-tag-button', className="button"),
-                                        html.Button('Calculate corrupt packet', id='analyze-button', n_clicks=0,
-                                                    className="button"),
-                                        html.Button('Repair by exclusion', id='repair-exclusion-button', n_clicks=0,
-                                                    className="button"),
-                                        html.Button('Find solutions by reordering', id='repair-reorder-button',
-                                                    n_clicks=0,
-                                                    className="button"),
-                                        html.Button('Find solutions by reordering (partial)',
-                                                    id='repair-reorder-button-possible',
-                                                    n_clicks=0,
-                                                    className="button"),
-                                        html.Button('Save file', id='save-button', n_clicks=0, className="button"),
-                                        # (In)Valid Packet tagging:
-                                        html.Div([html.Button('Tag affected chunks as invalid',
-                                                              id='packet-tag-chunk-invalid-button', className="button"),
-                                                  html.Button('Tag affected chunks as valid',
-                                                              id='packet-tag-chunk-valid-button', className="button"),
-                                                  dcc.Input(id='packet-tag-chunk-input', type="number",
-                                                            className="input",
-                                                            placeholder="Packet id")]),
-                                        # Repair Window code:
-                                        html.Div([html.Button('Open repair window', id='repair-button', n_clicks=0,
-                                                              className="button"),
-                                                  dcc.Input(id='repair-id-input-box', type='number', min=0, step=1,
-                                                            max=len(get_chunk_tag()), className="input",
-                                                            placeholder='Id of chunk to repair')]),
-                                        html.Div(
-                                            [dcc.Input(id='hex-repair-input', type='text', placeholder='Hex to repair',
-                                                       className="input"),
-                                             dcc.Input(id='txt-repair-input', type='text', placeholder='Text to repair',
-                                                       className="input"),
-                                             html.Button('Repair', id='repair-chunks-button', n_clicks=0,
-                                                         className="button")],
-                                            hidden=True, id="repair-input"),
-                                    ], className="box"),
-                                    # manual plugin loading:
-                                    html.Div(id="plugin_load_container", children=force_load_plugins),
-                                    # plugins:
-                                    html.Div(id="plugin_view", children=all_plugins_childs, n_clicks=0),
-                                    # canvas:
-                                    html.Div(id="canvas",
-                                             style=(
-                                                 {"image-rendering": "pixelated",
-                                                  "display": "block"} if show_canvas else {
-                                                     "image-rendering": "pixelated", "display": "none"}),
-                                             children=html.Div([
-                                                 html.Div([
-                                                     DashCanvas(
-                                                         id='dashCanvas',
-                                                         lineWidth=1,
-                                                         image_content='{}',
-                                                         tool='line',
-                                                         hide_buttons=['pencil'],  # 'line', 'zoom', 'pan'],
-                                                     ),
-                                                     html.Canvas(id='canvas-output'),
-                                                 ], className="six columns"),
-                                             ])),
-                                    html.Div(id="kaitai_view"),
-                                    # hex / normal view for decoded data:
-                                    html.Div(id="row_view", children=child, n_clicks=0, className="box"),
-                                    ])
+
+    app.layout = gen_app_layout(semi_automatic_solver, get_chunk_tag(), force_load_plugins, all_plugins_childs,
+                                show_canvas, child)
 
 
 def get_column_tag():
@@ -296,7 +211,7 @@ def propagete_chunk_tag_update():
 
 def propagate_gepp_update():
     global content_updated
-    # invalidate old chunk_tags and propagate new GEPP to all plugins
+    # invalidate old chunkTags and propagate new GEPP to all plugins
     reset_chunk_tag()
     content_updated = True
     for _plugin in plugin_manager.plugin_instances:
@@ -443,6 +358,24 @@ def update_canvas_data(json_data):
     return recalculate_view() + (new_json_data,)
 
 
+def init_callback_handlers():
+    """Initialize callback handler instances after globals are set up."""
+    global plugin_handler, button_handler, repair_handler
+
+    plugin_handler = PluginCallbackHandler(
+        plugin_manager, get_chunk_tag, update_chunk_tag, update_column_tag,
+        recalculate_view, propagate_gepp_update
+    )
+
+    button_handler = ButtonCallbackHandler(
+        semi_automatic_solver, recalculate_view, propagate_gepp_update,
+        get_chunk_tag, update_chunk_tag, reset_chunk_tag, reset_column_tag,
+        propagete_chunk_tag_update, repair_chunks
+    )
+
+    repair_handler = RepairCallbackHandler(repair_callback, repair_chunks)
+
+
 @app.callback(
     Output("analytics-input", "children"),
     Output("repair-input", "hidden"),
@@ -472,285 +405,49 @@ def update_canvas_data(json_data):
     prevent_initial_call=True
 )
 def callback_handler(*args, **kwargs):
-    global chunk_tag
-    canvas_image_content = dash.no_update
-    info_str = dash.no_update
+    """Refactored callback handler that delegates to specialized handler classes."""
     c_ctx = dash.callback_context
-    packet_tag_chunk_input = c_ctx.states.get('packet-tag-chunk-input.value')
-    kaitai_view = dash.no_update
     trigger_id = c_ctx.triggered[0]["prop_id"].split(".")[0]
+    packet_tag_chunk_input = c_ctx.states.get('packet-tag-chunk-input.value')
+
+    # Handle plugin I/O callbacks
     if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith("plugin_io"):
-        trigger_id = c_ctx.triggered_id["index"]
-        for _plugin in plugin_manager.plugin_instances:
-            if not _plugin.active:
-                continue
-            ui: typing.Dict[str, typing.Dict[str, typing.Union[str, bool, typing.Callable]]] = _plugin.get_ui_elements()
-            for key, value in ui.items():
-                if trigger_id == key:
-                    res = value["callback"](chunk_tag=get_chunk_tag(), c_ctx=c_ctx, *args, **kwargs)
-                    update_b = False
-                    refresh_view = True
-                    for k, res_value in res.items():
-                        if k == "chunk_tag":
-                            update_chunk_tag(res_value)
-                        elif k == "column_tag":
-                            update_column_tag(res_value)
-                        elif k == "update_b":
-                            update_b = res_value
-                        elif k == "refresh_view":
-                            refresh_view = res_value
-                        elif k == "image_content":
-                            canvas_image_content = res_value
-                        elif k == "canvas_data":
-                            if "updates_canvas" in res and res["updates_canvas"]:
-                                # we may want to update all canvas data (the image including ALL tags/drawings)
-                                if "height" in res and "width" in res:
-                                    canvas_height = res["height"]
-                                    canvas_width = res["width"]
-                                canvas_image_content = array_to_data_url(res_value)
-                        elif k == "kaitai_content":
-                            kaitai_view = res["kaitai_content"]
-                        elif k == "info":
-                            info_str = res_value
+        return plugin_handler.handle_plugin_io(c_ctx.triggered_id["index"], c_ctx, *args, **kwargs)
 
-                        elif k == "repair_variations":
-                            res = "Saved to file(s): ["
-                            generate_all = "generate_all" in res_value and res_value["generate_all"]
-                            res_value = res_value["variations"]
-                            tmp = []
-                            for i, packet_to_repair in enumerate(common_packets):
-                                if packet_to_repair:
-                                    # iterate over all possibly corrupt packets:
-                                    # use a repaired chunk to fix the packet:
-                                    for chunk_id in range(
-                                            semi_automatic_solver.decoder.GEPP.chunk_to_used_packets.shape[1]):
-                                        if semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[chunk_id, i] and \
-                                                chunk_id in res_value:
-                                            # packet _i_ was used to create chunk _chunk_id_,
-                                            # thus we can back-propagate the repair to the packet:
-                                            tmp.append(semi_automatic_solver.repair_and_store_by_packet(chunk_id, i,
-                                                                                                        res_value[
-                                                                                                            chunk_id],
-                                                                                                        len(tmp) == 0))
-                                            if not generate_all:
-                                                break
-                            res += f"{', '.join(tmp)}]"
-                            info_str = res
-                        elif k == "repair_for_each_packet":
-                            res = "Saved to file(s): ["
-                            generate_all = "generate_all" in res_value and res_value["generate_all"]
-                            if "correctness_function" in res_value:
-                                correctness_function = res_value["correctness_function"]
-                            else:
-                                correctness_function = None
-                            res_value = res_value["repair_list"]
-                            # res values is a list of tuples: (possible_packet_ids, invalid_row, repaired_content_row)
-                            tmp = []
-                            for possible_packet_ids, invalid_row, repaired_content_row in res_value:
-                                for i, packet_to_repair in enumerate(possible_packet_ids):
-                                    # iterate over all possibly corrupt packets:
-                                    # use a repaired chunk to fix the packet:
-                                    # packet _i_ was used to create chunk _chunk_id_,
-                                    # thus we can back-propagate the repair to the packet:
-                                    tmp.append(
-                                        semi_automatic_solver.repair_and_store_by_packet(invalid_row, packet_to_repair,
-                                                                                         repaired_content_row,
-                                                                                         len(tmp) == 0,
-                                                                                         correctness_function))
-                                    if not generate_all and any([x.startswith("CORRECT_") for x in tmp]):
-                                        break
-                            res += f"{', '.join(tmp)}]"
-                            info_str = res
-                        elif k == "repair":
-                            if "chunk_tag" in res:
-                                update_chunk_tag(res["chunk_tag"])
-                                recalculate_view()
-                            repair_chunks_res = repair_chunks(res_value["corrected_row"],
-                                                              "".join([x.replace("0x", "").zfill(2) for x in
-                                                                       np.vectorize(hex)(
-                                                                           res_value["corrected_value"])]))
-                            propagate_gepp_update()
-                            return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                                    dash.no_update, dash.no_update,) + repair_chunks_res + (
-                                dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
-                        else:
-                            print(f"Warning: unknown key {k} in callback result of plugin {_plugin.__class__.__name__}")
-
-                    if ("refresh_view" in res and res["refresh_view"]) or refresh_view or update_b or (
-                            "updates_b" in res and res["updates_b"]):
-                        if update_b or ("updates_b" in res and res["updates_b"]):
-                            propagate_gepp_update()
-                        return (info_str, dash.no_update, dash.no_update, dash.no_update,
-                                dash.no_update,
-                                dash.no_update, dash.no_update,) + recalculate_view() + (
-                            dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
-                    else:
-                        return (info_str,) + (dash.no_update,) * 11 + (canvas_image_content, kaitai_view)
-    if trigger_id == "repair-button" or trigger_id == "hex-repair-input" or trigger_id == "txt-repair-input":
-        return repair_callback(trigger_id, c_ctx.inputs.get("repair-button.n_clicks"),
-                               c_ctx.inputs.get('repair-id-input-box.value'),
-                               c_ctx.inputs.get('hex-repair-input.value'), c_ctx.inputs.get('txt-repair-input.value')) + \
-            (dash.no_update, dash.no_update, "", dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+    # Handle repair-related callbacks
+    if trigger_id in ["repair-button", "hex-repair-input", "txt-repair-input"]:
+        return repair_handler.handle_repair_inputs(trigger_id, c_ctx)
     elif trigger_id == "repair-chunks-button":
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + \
-            repair_chunks(c_ctx.inputs.get('repair-id-input-box.value'), c_ctx.inputs.get('hex-repair-input.value')) + (
-                dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return repair_handler.handle_repair_chunks_button(c_ctx)
+
+    # Handle button callbacks
     elif trigger_id == "analyze-button":
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + recalculate_view() + (
-            dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return button_handler.handle_analyze_button()
     elif trigger_id == "repair-exclusion-button":
-        res, gepp = semi_automatic_solver.repair_by_exclusion(common_packets)
-        if res:
-            semi_automatic_solver.decoder.GEPP = gepp
-            propagate_gepp_update()
-            return (info_str, dash.no_update, dash.no_update, dash.no_update,
-                    dash.no_update,
-                    dash.no_update, dash.no_update,) + recalculate_view() + (
-                dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
-        else:
-            return ("No solution without the corrupt packet(s) found.", dash.no_update, dash.no_update,
-                    dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                    dash.no_update, dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return button_handler.handle_repair_exclusion_button()
     elif trigger_id == "calculate-rank-button":
-        rank_a = semi_automatic_solver.calculate_rank_A()
-        rank_augmented_matrix = semi_automatic_solver.calculate_rank_augmented_matrix()
-        if rank_augmented_matrix < semi_automatic_solver.decoder.number_of_chunks:
-            tmp_str = f"augmented rank ({rank_augmented_matrix}) < number of chunks ({semi_automatic_solver.decoder.number_of_chunks}), but partial recovery might be possible."
-        else:
-            tmp_str = "LES seems solvable."
-        info_str = f"rank(A)={rank_a}, rank(A|b)={rank_augmented_matrix}: {f'{tmp_str} Either all packets are correct or the corrupt packet is not linear dependent in the LES. This will be a tough one.' if rank_a == rank_augmented_matrix else ': Erroneous packet detectable!'}"
-        return (info_str,) + (dash.no_update,) * 13
+        return button_handler.handle_calculate_rank_button()
     elif trigger_id == "reset-chunk-tag-button":
-        reset_chunk_tag()
-        reset_column_tag()
-        propagete_chunk_tag_update()
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + recalculate_view() + (
-            dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return button_handler.handle_reset_chunk_tag_button()
     elif trigger_id == "save-button":
-        try:
-            filename = semi_automatic_solver.decoder.saveDecodedFile(return_file_name=True, print_to_output=False)
-        except ValueError as ve:
-            filename = ve.args[1]
-        return (filename, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
-    elif trigger_id == "packet-tag-chunk-invalid-button" or trigger_id == "packet-tag-chunk-valid-button":
-        try:
-            packet_tag_chunk_input = int(packet_tag_chunk_input)
-            if packet_tag_chunk_input < 0 or packet_tag_chunk_input > semi_automatic_solver.decoder.GEPP.b.shape[0]:
-                raise ValueError
-        except ValueError:
-            return "Chosen packet is not a number or not in range!", dash.no_update
-        tag_num = 1 if trigger_id == "packet-tag-chunk-invalid-button" else 2
-        update_chunk_tag(
-            semi_automatic_solver.get_corrupt_chunks_by_packets([packet_tag_chunk_input], chunk_tag, tag_num))
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + recalculate_view() + (
-            dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return button_handler.handle_save_button()
+    elif trigger_id in ["packet-tag-chunk-invalid-button", "packet-tag-chunk-valid-button"]:
+        return button_handler.handle_packet_tag_buttons(trigger_id, packet_tag_chunk_input)
     elif trigger_id == "mode-switch":
-        semi_automatic_solver.set_multi_error_mode(c_ctx.inputs.get('mode-switch.value'))
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + recalculate_view() + (
-            dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return button_handler.handle_mode_switch(c_ctx.inputs.get('mode-switch.value'))
     elif trigger_id == "colorblind-switch":
-        global correct_button_style, incorrect_button_style
-        if c_ctx.triggered[0]["value"]:
-            correct_button_style = colorblind_correct
-            incorrect_button_style = colorblind_incorrect
-        else:
-            correct_button_style = green_button_style
-            incorrect_button_style = red_button_style
-        # refresh view:
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + recalculate_view() + (
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update)
-    elif trigger_id == "repair-reorder-button" or trigger_id == "repair-reorder-button-possible":
-        only_possible_invalid_packets = trigger_id == "repair-reorder-button-possible"
-        gepp_backup = copy.deepcopy(semi_automatic_solver.decoder.GEPP)
-        # mapping contains the GEPP for each reordered packet
-        if not common_packets or len(common_packets) == 0:
-            raise RuntimeError("Calculate corrupt packets first!")
-        mapping = semi_automatic_solver.all_solutions_by_reordering(common_packets, only_possible_invalid_packets)
-        # check which and howmany of these results differ from the original GEPP:
-        differing_gepps = set()
-        differing_gepp_ids = set()
-        working_dir = "reordered_solution"
-        # delete the folder working_dir if it exists:
-        if Path(working_dir).exists():
-            shutil.rmtree(working_dir)
-        # create the folder working_dir:
-        Path(working_dir).mkdir(parents=True, exist_ok=True)
-        for _i, tmp_gepp in mapping.items():
-            if not np.array_equal(tmp_gepp.b[:semi_automatic_solver.decoder.number_of_chunks],
-                                  semi_automatic_solver.decoder.GEPP.b[
-                                  :semi_automatic_solver.decoder.number_of_chunks]):
-                # found a different GEPP
-                differing_gepps.add(tmp_gepp.b[:semi_automatic_solver.decoder.number_of_chunks].tobytes())
-                differing_gepp_ids.add(_i)
-        res = f"Saved {len(differing_gepps)} differing solutions by reordering the packets in folder {working_dir}: ["
-        for differing_gepp_id in differing_gepp_ids:
-            if semi_automatic_solver.headerChunk is not None and semi_automatic_solver.headerChunk.checksum_len_format is not None:
-                is_correct = semi_automatic_solver.is_checksum_correct()
-            else:
-                is_correct = False
-            semi_automatic_solver.decoder.GEPP = mapping[differing_gepp_id]
-            try:
-                filename = semi_automatic_solver.decoder.saveDecodedFile(return_file_name=True, print_to_output=False)
-            except ValueError as ve:
-                filename = ve.args[1]
-            # rename the file to include the differing_gepp_id:
-            _file = Path(filename)
-            stem = ("CORRECT_" if is_correct else "") + _file.stem + f"_{differing_gepp_id}"
-            _file = _file.rename(Path(working_dir + "/" + stem + _file.suffix))
-            res += f"{_file.name}, "
-        res += "]"
-        tmp = [mapping[x].b for x in differing_gepp_ids]
-        if len(tmp) == 0:
-            return ("No differing solutions found!", dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                    dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                    dash.no_update, dash.no_update, dash.no_update)
-        matrix_3d = np.dstack(tmp)
-        most_common_vals, has_single_val = fast_most_common_matrix(matrix_3d)
-        # with most_common_vals - gepp_backup.b we can calculate the rows AND columns that differ form the average
-        comp_mat = gepp_backup.b - most_common_vals
-        semi_automatic_solver.decoder.GEPP = gepp_backup
-        # calculate the invalid packet using by treating all rows from comp_mat with a sum() != 0 as invalid:
-        valid_rows = [i for i, v in enumerate(np.all(has_single_val, axis=1)) if
-                      v and i < semi_automatic_solver.decoder.GEPP.A.shape[1]]
-        # invalid_rows = [i for i in np.where(np.sum(comp_mat, axis=1) != 0)[0] if
-        #                i < semi_automatic_solver.decoder.GEPP.A.shape[1]]
-        # invalid_rows = np.sum(np.array([semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows[i:i+18], valid_rows) for i in range(len(invalid_rows)-18)]), axis=0, dtype=bool)
-        # com_packets = semi_automatic_solver.decoder.GEPP.get_common_packets([], valid_rows)
-        # update chunk_tag: if chunk_tag[i] is 0 and valid_rows[i], update chunk_tag[i] to 2:
-        for i in valid_rows:
-            if chunk_tag[i] < 1 and i:
-                chunk_tag[i] = 2
-        propagete_chunk_tag_update()
-        return (res, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update,) + recalculate_view() + (
-            dash.no_update, dash.no_update, canvas_image_content, kaitai_view)
+        return button_handler.handle_colorblind_switch(c_ctx.triggered[0]["value"])
+    elif trigger_id in ["repair-reorder-button", "repair-reorder-button-possible"]:
+        return button_handler.handle_repair_reorder_buttons(trigger_id)
     elif (c_ctx.triggered_id is not None and not isinstance(c_ctx.triggered_id, str) and
           c_ctx.triggered_id["type"] == "forceload-plugin-button"):
-        canvas_style = dash.no_update
-        for _plugin in plugin_manager.plugin_instances:
-            if _plugin.__class__.__name__ == c_ctx.triggered_id["index"]:
-                _div = html.Div(id="plugin_" + _plugin.__class__.__name__.lower(), className="box",
-                                children=plugin_manager.load_plugin(_plugin))
-                _plugin.on_load()
-                all_plugins_childs.append(_div)
-                canvas_style = {"display": "block"} if show_canvas else {"display": "none"}
-        # recalculate plugin container
-        return (info_str, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
-                dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, all_plugins_childs,
-                canvas_style, canvas_image_content, kaitai_view)
-    else:
-        return dash.no_update
+        return button_handler.handle_forceload_plugin_button(c_ctx)
+
+    # Default case
+    return dash.no_update
 
 
-def fast_most_common_matrix(matrices: np.array) -> np.array:
+def fast_most_common_matrix(matrices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     # takes a 3d array of matrices and returns the matrix of the most common value of each position (i,j,_)
     # get the dimensions of the first matrix in the list
     num_rows = matrices.shape[0]
@@ -828,6 +525,7 @@ if __name__ == '__main__':
         CHECKSUM_LEN_FORMAT = None
     init_globals(semi_automatic_solver)
     callbacks(app)
+    init_callback_handlers()  # Initialize the handler instances
     app.run(threaded=True, host="0.0.0.0")
     """
     # to enable debugging / dev tools:

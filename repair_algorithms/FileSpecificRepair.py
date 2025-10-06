@@ -1,8 +1,10 @@
 import norec4dna.GEPP
 
+from NOREC4DNA.semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
+
 
 class FileSpecificRepair:
-    def __init__(self, semi_automatic_solver=None, chunk_tag=None, *args,
+    def __init__(self, semi_automatic_solver:SemiAutomaticReconstructionToolkit=None, chunk_tag=None, *args,
                  **kwargs):
         self.semi_automatic_solver = semi_automatic_solver
         self.gepp = self.semi_automatic_solver.decoder.GEPP

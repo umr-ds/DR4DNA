@@ -7,6 +7,7 @@ from googletrans import Translator
 import language_tool_python
 from collections import Counter
 from Levenshtein import distance as levenshtein_distance
+import asyncio
 
 from repair_algorithms.PluginManager import PluginManager
 
@@ -47,8 +48,10 @@ class LangaugeToolTextRepair(FileSpecificRepair):
     def detect_language(self, *args, **kwargs):
         translator = Translator()
         start_pos = 1 if self.use_header_chunk else 0
-        x = translator.detect(self.filter_nonprintable(
-            "".join([chr(x) for x in self.gepp.b[start_pos:, :].reshape(-1)[self.gepp.b.shape[1]:1000]])))
+        text = self.filter_nonprintable(
+            "".join([chr(x) for x in self.gepp.b[start_pos:, :].reshape(-1)[self.gepp.b.shape[1]:1000]]))
+        x = asyncio.run(translator.detect(text))
+
         self.lang = x.lang
         return {"info": f"Detected language: {x.lang}", "updates_b": False, "refresh_view": False}
         # ( https://github.com/chenterry85/Language-Detection )
