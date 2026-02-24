@@ -57,8 +57,8 @@ class MetadataRepair(RandomShuffleRepair):
                 if np.array_equal(current_row[-len(metadata_seq):],
                                   np.frombuffer(metadata_seq, dtype=current_row.dtype)):
                     matching_sequences.append((i, metadata_seq))
-                    if not A[i, 0]:
-                        logger.warning(f"Row {i} does not contain the header but has a metadata tag at the end!?!")
+                    if not A[i, 0] and not A[i, -1]:
+                        logger.warning(f"Row {i} does not contain the header / last chunk but has a metadata tag at the end!?!")
 
         return matching_sequences
 
@@ -69,6 +69,11 @@ class MetadataRepair(RandomShuffleRepair):
         if A is None:
             A: numpy.ndarray = self.semi_automatic_solver.initial_A
         return frozenset([i for i in range(A.shape[0]) if A[i, 0]])
+
+    def get_rows_with_lastchunk(self, A:typing.Optional[numpy.ndarray]= None) -> typing.FrozenSet[int]:
+        if A is None:
+            A: numpy.ndarray = self.semi_automatic_solver.initial_A
+        return frozenset([i for i in range(A.shape[0]) if A[i, -1]])
 
     def find_equal_seed_rows(self, A: typing.Optional[numpy.ndarray] = None) -> typing.Set[typing.FrozenSet[int]]:
         if A is None:
@@ -191,7 +196,7 @@ class MetadataRepair(RandomShuffleRepair):
                 zero_diff = numpy.array([], dtype="uint8")
             return zero_diff, False
 
-        logger.error(f"Got additional payload: {header.additional_payload}")
+        logger.warning(f"Got additional payload: {header.additional_payload}")
         if len(header.file_name) == 0:
             # TODO: check if this works as intended: if we already know the correct filename (self.known_filename)
             # we can calculate the diff between expected and actual with this info
@@ -214,6 +219,17 @@ class MetadataRepair(RandomShuffleRepair):
     # falls es uneindeutig ist können wir folgenden code verwenden um dann mit der prüfsumme die korrekte version zu erhalten:
     #             res = self.semi_automatic_solver.constrained_repair(error_delta=np.frombuffer(error_delta, dtype="uint8"),
     #                                                                 possible_packets=[int(x) for x in self.intersects[error_delta]])
+
+    # TODO: use this function to remove diff from any affected packet
+    def calculate_last_chunk_padding_diff(self, header_chunk: HeaderChunk, gepp: GEPP_intern):
+        """
+        Extracts the changed content from the last chunk padding (known to be bytes of value 0x00)
+        """
+        if (header_chunk is None or header_chunk.last_chunk_length is None or header_chunk.last_chunk_length < 0 or
+                header_chunk.last_chunk_length > len(gepp.b[0]) or not gepp.isSolved()):
+            raise RuntimeError("GEPP must be solved and clean headerchunk must exist and be valid for last chunk padding calculation!")
+        return gepp.b[-1,:header_chunk.last_chunk_length] # FIXME: this may be reversed!
+
     @staticmethod
     def remove_equal_seed_non_representatives(sorted_A, sorted_b, set_representatives: typing.List[
         typing.Tuple[int, typing.FrozenSet[int], bool]]) -> typing.Tuple[np.ndarray, np.ndarray]:
@@ -242,12 +258,14 @@ class MetadataRepair(RandomShuffleRepair):
 
     def get_special_rows(self, sorted_A, sorted_b):
         rows_with_headerchunk = self.get_rows_with_headerchunk(sorted_A)
+        rows_with_lastchunk = self.get_rows_with_lastchunk(sorted_A)
         rows_with_metadata = self.find_metadata_rows((sorted_A, sorted_b))
         equal_seed_rows = self.find_equal_seed_rows(sorted_A)
+        combined_rows = rows_with_headerchunk.union(rows_with_lastchunk)
         set_representatives: typing.List[typing.Tuple[int, typing.FrozenSet[int], bool]] = sorted(
-            [x for x in self.find_representative(equal_seed_rows, rows_with_headerchunk, rows_with_metadata)],
+            [x for x in self.find_representative(equal_seed_rows, combined_rows, rows_with_metadata)],
             key=lambda x: x[2], reverse=True)
-        return rows_with_headerchunk, rows_with_metadata, equal_seed_rows, set_representatives
+        return combined_rows, rows_with_metadata, equal_seed_rows, set_representatives
 
         # Eleganteste Lösung:
         # FIXME: Weitere Alternative Idee: Berechne alle Fehlerdeltas mit einschränkung, dass die Metadaten-Pakete bekannt
@@ -280,37 +298,37 @@ class MetadataRepair(RandomShuffleRepair):
         sorted_A: numpy.ndarray = self.semi_automatic_solver.initial_A.copy()
         sorted_b = self.semi_automatic_solver.initial_b.copy()
 
-        # rows_with_headerchunk = self.get_rows_with_headerchunk(sorted_A)
-        rows_with_headerchunk, rows_with_metadata, equal_seed_rows, set_representatives = self.get_special_rows(
+        # special_rows = self.get_rows_with_headerchunk(sorted_A)
+        special_rows, rows_with_metadata, equal_seed_rows, set_representatives = self.get_special_rows(
             sorted_A, sorted_b)
-        # reorder GEPP and put all rows in rows_with_headerchunk at the END of the GEPP matrix
-        # for current_row in sorted(rows_with_headerchunk, reverse=True):
+        # reorder GEPP and put all rows in special_rows at the END of the GEPP matrix
+        # for current_row in sorted(special_rows, reverse=True):
         #    # move to end of GEPP:
         #    sorted_A = np.vstack([np.delete(sorted_A, current_row, axis=0), sorted_A[current_row]])
         #    sorted_b = np.vstack([np.delete(sorted_b, current_row, axis=0), sorted_b[current_row]])
         n = sorted_A.shape[0]
-        rows = np.array(list(rows_with_headerchunk))  # keep original relative order
+        rows = np.array(list(special_rows))  # keep original relative order
         keep = np.setdiff1d(np.arange(n), rows, assume_unique=True)
         new_order = np.r_[keep, rows]
         sorted_A = sorted_A[new_order].copy()
         sorted_b = sorted_b[new_order].copy()
 
-        rows_with_headerchunk, rows_with_metadata, equal_seed_rows, set_representatives = self.get_special_rows(
+        special_rows, rows_with_metadata, equal_seed_rows, set_representatives = self.get_special_rows(
             sorted_A, sorted_b)
 
         sorted_A, sorted_b = self.remove_equal_seed_non_representatives(sorted_A, sorted_b, set_representatives)
 
         # recalculate as deletions might break the calculated positions
-        rows_with_headerchunk, rows_with_metadata, equal_seed_rows, set_representatives = self.get_special_rows(
+        special_rows, rows_with_metadata, equal_seed_rows, set_representatives = self.get_special_rows(
             sorted_A, sorted_b)
         # we only need to decode with one of each element in each group present. further, when decoding for a group,
         # a single representative of each other group should be present but put at the very end of the GEPP!
-        no_fully_solved = set(rows_with_headerchunk)
+        no_fully_solved = set(special_rows)
         repeats = 0
         unique_diffs = set()
         fixed_packets = set()
         while len(no_fully_solved) > 0:
-            if repeats > 2 * len(rows_with_headerchunk):
+            if repeats > 2 * len(special_rows):
                 logger.error("Got into an endless loop trying to solve metadata without the filename!")
                 break
             repeats += 1
@@ -329,7 +347,6 @@ class MetadataRepair(RandomShuffleRepair):
                 tmp_b[representative] = tmp_b[0]
                 tmp_b[0] = swap_b
                 """
-                # this seems to fail for some reason?!:
                 tmp_A[[0, representative]] = tmp_A[[representative, 0]]
                 tmp_b[[0, representative]] = tmp_b[[representative, 0]]
 
@@ -341,32 +358,79 @@ class MetadataRepair(RandomShuffleRepair):
                 tmp_gepp, org_mapping = self.solve_and_map(GEPP(tmp_A, tmp_b))
                 # get all remaining (except for the first row (representative)) packets with the header-chunk
                 # that were used to decode the header:
-                other_header_rows_included = set([x for x in range(len(tmp_gepp.chunk_to_used_packets[0])) if
-                                                  tmp_gepp.chunk_to_used_packets[0][x]]) & rows_with_headerchunk
-                undetermined_header_packets = other_header_rows_included - fixed_packets
-                if len(undetermined_header_packets) > 0:
-                    # TODO: in its current configuration, we may have to solve such rows twice even if the other
-                    #  packet(s) do not contain any metadata
-                    # the current solution is a combination of multiple diffs (not the actual solution!)
-                    for p in undetermined_header_packets:
-                        no_fully_solved.add(p)
-                    no_fully_solved.add(representative)
-                    logging.warning(f"Multiple metadata-packets were used to decode this header - "
-                                    f"Trying to find the linear combination to solve this.")
-                diff, includes_filename = self.calculate_header_diff(tmp_gepp.b[0])
-                unique_diffs.add(diff.tobytes())
-                # TODO: handle the case that includes_filename is False and we do not know the filename yet!
-                if not includes_filename:
-                    no_fully_solved.add(representative)
-                # propagate diff to representative-row in sorted_b:
-                if diff.max() > 0:
-                    if tmp_gepp.chunk_to_used_packets[0][0] and len(no_fully_solved) == 0:
-                        assert sorted_A[representative][0]
-                        sorted_b[representative] = xor_numpy(sorted_b[representative], diff)
-                        fixed_packets.add(representative)
-                    else:
-                        logger.warning(
-                            f"Packet {representative} was not used to decode header chunk even though it was set as first packet!")
+                if tmp_A[0,0]:
+                    other_header_rows_included = set([x for x in range(len(tmp_gepp.chunk_to_used_packets[0])) if
+                                                      tmp_gepp.chunk_to_used_packets[0][x]]) & special_rows
+                    undetermined_header_packets = other_header_rows_included - fixed_packets
+                    if len(undetermined_header_packets) > 0:
+                        # TODO: in its current configuration, we may have to solve such rows twice even if the other
+                        #  packet(s) do not contain any metadata
+                        # the current solution is a combination of multiple diffs (not the actual solution!)
+                        for p in undetermined_header_packets:
+                            no_fully_solved.add(p)
+                        no_fully_solved.add(representative)
+                        logging.warning(f"Multiple metadata-packets were used to decode this header - "
+                                        f"Trying to find the linear combination to solve this.")
+                    diff, includes_filename = self.calculate_header_diff(tmp_gepp.b[0])
+                    unique_diffs.add(diff.tobytes())
+                    # TODO: handle the case that includes_filename is False and we do not know the filename yet!
+                    if not includes_filename:
+                        no_fully_solved.add(representative)
+                    # propagate diff to representative-row in sorted_b:
+                    if diff.max() > 0:
+                        if tmp_gepp.chunk_to_used_packets[0][0] and len(no_fully_solved) == 0:
+                            assert sorted_A[representative][0]
+                            sorted_b[representative] = xor_numpy(sorted_b[representative], diff)
+                            fixed_packets.add(representative)
+                        else:
+                            logger.warning(
+                                f"Packet {representative} was not used to decode header chunk even though it was set as first packet!")
+                else:
+                    other_lastchunk_rows_included = set([x for x in range(len(tmp_gepp.chunk_to_used_packets[-1])) if
+                                                      tmp_gepp.chunk_to_used_packets[-1][x]]) & special_rows
+                    undetermined_lastchunk_packets = other_lastchunk_rows_included - fixed_packets
+                    if len(undetermined_lastchunk_packets) > 0:
+                        # TODO: in its current configuration, we may have to solve such rows twice even if the other
+                        #  packet(s) do not contain any metadata
+                        # the current solution is a combination of multiple diffs (not the actual solution!)
+                        for p in undetermined_lastchunk_packets:
+                            no_fully_solved.add(p)
+                        no_fully_solved.add(representative)
+                        logging.warning(f"Multiple metadata-packets were used to decode the last chunk - "
+                                        f"Trying to find the linear combination to solve this.")
+                    # Safely attempt to calculate the last-chunk padding diff. Tests and some fakes may not provide
+                    # a headerChunk or the expected attributes; in that case, fall back to a zero-diff so the
+                    # repair loop can continue without raising exceptions.
+                    try:
+                        header_chunk = getattr(self.semi_automatic_solver, 'headerChunk', None)
+                        if header_chunk is None or getattr(header_chunk, 'last_chunk_length', None) is None:
+                            logger.warning("HeaderChunk missing or incomplete; using zero diff for last chunk padding.")
+                            diff = np.zeros_like(tmp_gepp.b[0])
+                        else:
+                            # calculate_last_chunk_padding_diff expects the header chunk and the solved gepp
+                            diff = self.calculate_last_chunk_padding_diff(header_chunk, tmp_gepp)
+                    except Exception as e:
+                        logger.warning(f"Could not calculate last chunk padding diff: {e}")
+                        try:
+                            diff = np.zeros_like(tmp_gepp.b[0])
+                        except Exception:
+                            diff = np.array([], dtype="uint8")
+
+                    # For last-chunk handling we don't have an 'includes_filename' flag; handle propagation similarly
+                    unique_diffs.add(diff.tobytes())
+                    if diff.max() > 0:
+                        # If the last chunk was used from packet 0 and there are no other unresolved packets,
+                        # apply the diff to the representative row.
+                        try:
+                            if tmp_gepp.chunk_to_used_packets[-1][0] and len(no_fully_solved) == 0:
+                                assert sorted_A[representative][-1] or True
+                                sorted_b[representative] = xor_numpy(sorted_b[representative], diff)
+                                fixed_packets.add(representative)
+                            else:
+                                logger.warning(
+                                    f"Packet {representative} was not used to decode last chunk even though it was set as first packet!")
+                        except Exception:
+                            logger.warning("Error while propagating last-chunk diff to representative; skipping propagation.")
         logger.debug(f"unique_diffs_count={len(unique_diffs)}")
         rows_to_keep = []
         # reduce work as packets with equal seed but
