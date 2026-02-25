@@ -97,3 +97,86 @@ div[hidden] {
     padding-left: 5px;
     display: table;
 }
+
+.error-container {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    max-width: 600px;
+    z-index: 9999;
+}
+
+.error-notification {
+    background-color: #f8d7da;
+    border: 2px solid #721c24;
+    color: #721c24;
+    padding: 15px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Source Code Pro VF', 'Source Code Pro', monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.error-notification strong {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.error-notification .close-btn {
+    float: right;
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #721c24;
+    padding: 0;
+    margin-top: -5px;
+}
+
+.error-notification .close-btn:hover {
+    color: #1c0205;
+}
+
+.global-loading {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10000;
+    text-align: center;
+}
+
+.global-loading-spinner {
+    display: inline-block;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.global-loading-message {
+    margin-top: 10px;
+    font-size: 16px;
+    color: #333;
+}
+
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 9998;
+    display: none;
+}
+
+.loading-overlay.active {
+    display: block;
+}

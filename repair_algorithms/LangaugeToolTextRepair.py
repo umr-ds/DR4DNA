@@ -276,7 +276,7 @@ class LangaugeToolTextRepair(FileSpecificRepair):
     def update_gepp(self, gepp):
         # invalidate error matrix:
         self.error_matrix = None
-        self.gepp = self.semi_automatic_solver.decoder.GEPP
+        self.gepp = gepp  # Use the passed gepp parameter
         # trigger recalculating the error matrix:
         # self.find_error_region()
 

@@ -42,7 +42,7 @@ class PluginManager:
                     show_canvas = True
             elif value["type"] == "int":
                 default_value = 0 if "default" not in value else value["default"]
-                _plugin_childs.append(html.Div([html.Label(value["text"], className="label"),
+                _plugin_childs.append(html.Div([html.Div(value["text"], className="label"),
                                                 html.Div(
                                                     [dcc.Input(id={'type': 'plugin_io_value', 'index': key},
                                                                type="number",
@@ -51,7 +51,7 @@ class PluginManager:
                 if "updates_canvas" in value and value["updates_canvas"]:
                     show_canvas = True
             elif value["type"] == "text":
-                _plugin_childs.append(html.Div([html.Label(value["text"], className="label"),
+                _plugin_childs.append(html.Div([html.Div(value["text"], className="label"),
                                                 html.Div(
                                                     [dcc.Input(id={'type': 'plugin_io_value', 'index': key},
                                                                type="text",
@@ -95,9 +95,9 @@ class PluginManager:
                     html.A('Download Data', id={'type': 'plugin_io_download', 'index': key}, className="button")
                 )
             elif value["type"] == "toggle":
-                _plugin_childs.append(html.Div([html.Label(value["off_label"]),
+                _plugin_childs.append(html.Div([html.Span(value["off_label"]),
                                                 daq.ToggleSwitch(id={'type': 'plugin_io_switch', 'index': key},
                                                                  label=value["label"],
                                                                  labelPosition='bottom', className="inline-switch"
-                                                                 ), html.Label(value["on_label"])]))
+                                                                 ), html.Span(value["on_label"])]))
         return _plugin_childs

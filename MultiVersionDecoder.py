@@ -133,8 +133,8 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         """
         # a = self.decoder.solve()
         # file_name = self.decoder.saveDecodedFile(return_file_name=True)
-        tmp_packets = self.decoder.packets.copy()
-        self.decoder_bkp = self.decoder
+        #tmp_packets = self.decoder.packets.copy()
+        #self.decoder_bkp = self.decoder
         self.decoder = type(self.decoder).from_config_map(self.decoder.config_map)
         # if we dont have a known base file, we have to decode the base version first
         print("Decoding base version...", flush=True)
@@ -190,20 +190,6 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
             last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"), return_file_name=True)
         Path(file_name).rename("v0_" + file_name)
         return self.decoder
-        """
-        self.decoder =
-        fasta_entries = load_fasta(self.decoder.file)
-        fasta_seqs = [seq for seq in fasta_entries.values() if seq.find(base_dna_version_string) == -1]
-        # store the fasta_seqs in a temporary fasta file:
-        temp_fasta_file = "temp_base_version.fasta"
-        with open(temp_fasta_file, "w") as f:
-            for i, seq in enumerate(fasta_seqs):
-                f.write(f">seq_{i}\n")
-                f.write(seq + "\n")
-        # create a new temporary configfile for the decoder with the new fasta file:
-        temp_ini_file = "temp_base_version.ini"
-        with open(temp_ini_file, "w") as f:
-        """
 
     def decode_to_version(self, base_dna_version_string, version):
         """

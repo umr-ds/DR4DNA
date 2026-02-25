@@ -16,6 +16,7 @@ from layout import gen_app_layout
 from repair_algorithms import *  # NOSONAR
 from repair_algorithms.PluginManager import PluginManager
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
+from state import get_app_state, initialize_app_state, AppState
 
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
@@ -47,24 +48,15 @@ incorrect_button_style = red_button_style
 colorblind_correct = {'backgroundColor': '#84CE73'}
 colorblind_incorrect = {'backgroundColor': 'brown'}
 
-common_packets = []
-child = []
-content_updated = False
-show_canvas = False
-# 0 = no information about the correctness of the chunk
-# 1 = chunk is correct
-# 2 = chunk is incorrect
-chunk_tag = []
-column_tag = []
-
+# Module-level UI state (Dash components - not serialized in AppState)
 canvas_list = []
-plugin_manager = PluginManager()
-plugin_manager.plugin_instances.clear()
+child = []
 force_load_plugins = []
 all_plugins_childs = []
 
 app = DashProxy(__name__, external_stylesheets=EXTERNAL_STYLESHEETS, meta_tags=META_TAGS,
-                prevent_initial_callbacks=True, transforms=[MultiplexerTransform()])
+                prevent_initial_callbacks=True, transforms=[MultiplexerTransform()],
+                suppress_callback_exceptions=True)
 
 input_callback_handler = [Input('repair-button', 'n_clicks'),
                           Input('repair-reorder-button-possible', 'n_clicks'),
@@ -89,41 +81,48 @@ input_callback_handler = [Input('repair-button', 'n_clicks'),
                           Input({'type': 'plugin_io_upload-data', "index": ALL}, 'contents')]
 
 
-def init_globals(semi_automatic_solver):
-    global chunk_tag, column_tag
-    chunk_tag = [0 for _ in range(len(semi_automatic_solver.decoder.GEPP.b))]
-    column_tag = [0 for _ in range(semi_automatic_solver.decoder.GEPP.b.shape[1])]
+def init_globals(solver):
+    global chunk_tag, column_tag, child, force_load_plugins, all_plugins_childs, canvas_list
+    state = get_app_state()
+    plugin_manager = state.get_plugin_manager()
+    
+    # Reset UI state
+    child = []
+    force_load_plugins = []
+    all_plugins_childs = []
+    canvas_list = []
+    
+    chunk_tag = [0 for _ in range(len(solver.decoder.GEPP.b))]
+    column_tag = [0 for _ in range(solver.decoder.GEPP.b.shape[1])]
     for plugin in plugin_manager.get_plugins():
-        plugin_instance: FileSpecificRepair = plugin(semi_automatic_solver,
+        plugin_instance: FileSpecificRepair = plugin(solver,
                                                      chunk_tag=get_chunk_tag())
         plugin_manager.plugin_instances.append(plugin_instance)
         plugin_instance.get_ui_elements()
         force_load_plugins.append(html.Button(plugin_instance.__class__.__name__, id={"type": "forceload-plugin-button",
                                                                                       "index": plugin_instance.__class__.__name__}))
-        if plugin_instance.is_compatible(semi_automatic_solver.predict_file_type()):
+        if plugin_instance.is_compatible(solver.predict_file_type()):
             plugin_childs = plugin_manager.load_plugin(plugin_instance)
             if len(plugin_childs) > 0:
                 div = html.Div(id="plugin_" + plugin_instance.__class__.__name__.lower(), className="box",
                                children=plugin_childs)
                 all_plugins_childs.append(div)
     child.append(calculate_column_correctness_view())
-    for i, x in enumerate(semi_automatic_solver.view_file_with_chunkborders(False, False, LAST_CHUNK_LEN_FORMAT,
-                                                                            checksum_len_format=CHECKSUM_LEN_FORMAT)):
+    for i, x in enumerate(solver.view_file_with_chunkborders(False, False, LAST_CHUNK_LEN_FORMAT,
+                                                                            checksum_len_format=state.checksum_len_format)):
         child.append(html.Div([html.H4(f"{str(i).zfill(8)}", id={'type': 'e_row_h', 'index': i}), x],
                               id={'type': 'e_row', 'index': i}, className="entry_row"))
 
-    app.layout = gen_app_layout(semi_automatic_solver, get_chunk_tag(), force_load_plugins, all_plugins_childs,
-                                show_canvas, child)
+    app.layout = gen_app_layout(solver, get_chunk_tag(), force_load_plugins, all_plugins_childs,
+                                state.show_canvas, child)
 
 
 def get_column_tag():
-    global column_tag
-    return column_tag
+    return get_app_state().get_column_tag()
 
 
 def update_column_tag(tag):
-    global column_tag
-    column_tag = tag
+    get_app_state().update_column_tag(tag)
 
 
 def reset_column_tag():
@@ -131,18 +130,17 @@ def reset_column_tag():
 
 
 def get_chunk_tag():
-    global chunk_tag
-    return chunk_tag
+    return get_app_state().get_chunk_tag()
 
 
 def update_chunk_tag(tag):
-    global chunk_tag
-    chunk_tag = tag
+    get_app_state().update_chunk_tag(tag)
 
 
 def update_single_element_chunk_tag(key, value):
-    global chunk_tag
-    chunk_tag[key] = value
+    tag = get_chunk_tag()
+    tag[key] = value
+    update_chunk_tag(tag)
 
 
 def reset_chunk_tag():
@@ -153,6 +151,9 @@ def reset_chunk_tag():
               Input({'type': 'plugin_io_download', 'index': MATCH}, "n_clicks"),
               prevent_initial_call=True, )
 def download_data(n_clicks):
+    state = get_app_state()
+    plugin_manager = state.get_plugin_manager()
+    
     c_ctx = dash.callback_context
     if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith("plugin_io"):
         trigger_id = c_ctx.triggered_id["index"]
@@ -204,28 +205,36 @@ def calculate_column_correctness_view():
 
 
 def propagete_chunk_tag_update():
+    state = get_app_state()
+    solver = state.get_solver()
+    plugin_manager = state.get_plugin_manager()
     for _plugin in plugin_manager.plugin_instances:
-        if _plugin.is_compatible(semi_automatic_solver.predict_file_type()):
+        if _plugin.is_compatible(solver.predict_file_type()):
             _plugin.update_chunk_tag(get_chunk_tag())
 
 
 def propagate_gepp_update():
-    global content_updated
+    state = get_app_state()
+    solver = state.get_solver()
+    plugin_manager = state.get_plugin_manager()
     # invalidate old chunkTags and propagate new GEPP to all plugins
     reset_chunk_tag()
-    content_updated = True
+    state.mark_content_updated()
     for _plugin in plugin_manager.plugin_instances:
         if not _plugin.active:
             continue
-        if _plugin.is_compatible(semi_automatic_solver.predict_file_type()):
-            res = _plugin.update_gepp(semi_automatic_solver.decoder.GEPP)
+        if _plugin.is_compatible(solver.predict_file_type()):
+            res = _plugin.update_gepp(solver.decoder.GEPP)
             if res is not None and "chunk_tag" in res:
                 update_chunk_tag(res["chunk_tag"])
                 propagete_chunk_tag_update()
 
 
 def repair_chunks(repair_id, hex_value):
-    if sum(common_packets) != 1 and not semi_automatic_solver.multi_error_packets_mode:
+    state = get_app_state()
+    solver = state.get_solver()
+    
+    if sum(state.common_packets) != 1 and not solver.multi_error_packets_mode:
         return html.Div("More than one packet still possible!"), dash.no_update, dash.no_update
     # use only the common packets that influence the selected chunk
     # an additional problem seems to be that we can tag chunks as invalid, others as valid and they yield to a deadlock
@@ -233,12 +242,12 @@ def repair_chunks(repair_id, hex_value):
     # if we tag chunk 1 as valid, chunk 2 as invalid, then multi-mode will yield packet 2 and packet 3 as possible invalid packets
     # BUT if we then try to repair chunk 2, there is no packet that might have created chunk 2 without also invalidating chunk 1
 
-    common_packets_for_chunk = np.zeros(len(common_packets), dtype=bool)
-    for packet_id, is_in in enumerate(common_packets):
-        if is_in and semi_automatic_solver.decoder.GEPP.get_common_packets([repair_id])[packet_id]:
+    common_packets_for_chunk = np.zeros(len(state.common_packets), dtype=bool)
+    for packet_id, is_in in enumerate(state.common_packets):
+        if is_in and solver.decoder.GEPP.get_common_packets([repair_id])[packet_id]:
             common_packets_for_chunk[packet_id] = True
-    semi_automatic_solver.manual_repair(repair_id, np.argmax(common_packets_for_chunk),
-                                        bytearray.fromhex(hex_value.replace(" ", "")))
+    solver.manual_repair(repair_id, np.argmax(common_packets_for_chunk),
+                        bytearray.fromhex(hex_value.replace(" ", "")))
     propagate_gepp_update()
     return recalculate_view()
 
@@ -263,6 +272,9 @@ def change_button_style(n_clicks, n_clicks2):
 
 
 def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
+    state = get_app_state()
+    solver = state.get_solver()
+    
     if hex_value is None:
         hex_value = ""
     if txt_value is None:
@@ -270,7 +282,7 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
     # in this case, all we have to do is propagate to all packets that are still reachable from chunk "id_value"
     # and then recalculate the view
     if trigger_id == "repair-button" and (id_value is None or get_chunk_tag()[id_value] == 2 or get_chunk_tag()[
-        id_value] == 0 or (sum(common_packets) > 1 and not semi_automatic_solver.multi_error_packets_mode)):
+        id_value] == 0 or (sum(state.common_packets) > 1 and not solver.multi_error_packets_mode)):
         return html.Div(
             "Repair only possible for rows tagged as invalid. Additionally, a single corrupt packet should be identified."), True, False, "", {}, "", {}
     # set width to fit content:
@@ -279,7 +291,7 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
     if all(c in string.hexdigits + " " for c in "" + hex_value):
         if trigger_id == "repair-button":
             # fill in hex-repair-input and txt-repair-input
-            res = semi_automatic_solver.decoder.GEPP.b[id_value]
+            res = solver.decoder.GEPP.b[id_value]
             res_str = "".join([chr(_i) if 32 <= _i <= 127 else "." for _i in res])
             res_hex = " ".join([f"{_i:02x}" for _i in res])
         elif trigger_id == "hex-repair-input":
@@ -326,10 +338,10 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
 @app.callback(Output("analytics-output", "children"), Input('interval-component', 'n_intervals'),
               prevent_initial_call=True)
 def update_analytics(n):
-    global content_updated
-    if content_updated:
-        content_updated = False
-        return html.H3(semi_automatic_solver.predict_file_type())
+    state = get_app_state()
+    if state.is_content_updated():
+        state.reset_content_updated()
+        return html.H3(state.get_solver().predict_file_type())
     else:
         return dash.no_update
 
@@ -338,8 +350,12 @@ def update_analytics(n):
               Output('row_view', 'children'),
               Output("ls-loading-output-2", "children"),
               Output("dashCanvas", "json_data"),
-              Input('dashCanvas', 'json_data'))
+              Input('dashCanvas', 'json_data'),
+              prevent_initial_call=True)
 def update_canvas_data(json_data):
+    state = get_app_state()
+    plugin_manager = state.get_plugin_manager()
+    
     updates_b = False
     new_json_data = dash.no_update
     if json_data is None:
@@ -361,14 +377,15 @@ def update_canvas_data(json_data):
 def init_callback_handlers():
     """Initialize callback handler instances after globals are set up."""
     global plugin_handler, button_handler, repair_handler
+    state = get_app_state()
 
     plugin_handler = PluginCallbackHandler(
-        plugin_manager, get_chunk_tag, update_chunk_tag, update_column_tag,
+        state, state.get_plugin_manager(), get_chunk_tag, update_chunk_tag, update_column_tag,
         recalculate_view, propagate_gepp_update
     )
 
     button_handler = ButtonCallbackHandler(
-        semi_automatic_solver, recalculate_view, propagate_gepp_update,
+        state, recalculate_view, propagate_gepp_update,
         get_chunk_tag, update_chunk_tag, reset_chunk_tag, reset_column_tag,
         propagete_chunk_tag_update, repair_chunks
     )
@@ -468,30 +485,32 @@ def fast_most_common_matrix(matrices: np.ndarray) -> tuple[np.ndarray, np.ndarra
 
 
 def recalculate_view():
-    global common_packets
+    state = get_app_state()
+    solver = state.get_solver()
+    
     child_view = []
     invalid_rows = [_i for _i, _x in enumerate(get_chunk_tag()) if
                     _x == 1]
     valid_rows = [_i for _i, _x in enumerate(get_chunk_tag()) if _x == 2]
-    common_packets = semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows,
+    state.common_packets = solver.decoder.GEPP.get_common_packets(invalid_rows,
                                                                            valid_rows,
-                                                                           semi_automatic_solver.multi_error_packets_mode)  # [:semi_automatic_solver.decoder.GEPP.m]
-    not_used_packets = semi_automatic_solver.calculate_unused_packets()
-    common_packets = [(not not_used_packets[_i]) and common_packets[_i] for _i, _x in enumerate(common_packets)]
+                                                                           solver.multi_error_packets_mode)  # [:semi_automatic_solver.decoder.GEPP.m]
+    not_used_packets = solver.calculate_unused_packets()
+    state.common_packets = [(not not_used_packets[_i]) and state.common_packets[_i] for _i, _x in enumerate(state.common_packets)]
     print(
         f"The following packets were not used for the reconstruction: {[_i for _i, j in enumerate(not_used_packets) if j]}")
     print("potentially invalid Packets:")
-    print(" ".join(map(lambda x: "1" if x else "0", common_packets)), flush=True)
-    rem_possible_chunks = semi_automatic_solver.get_possible_invalid_chunks_from_common_packets(common_packets)
+    print(" ".join(map(lambda x: "1" if x else "0", state.common_packets)), flush=True)
+    rem_possible_chunks = solver.get_possible_invalid_chunks_from_common_packets(state.common_packets)
     # add an indicator for the column correctness:
     child_view.append(calculate_column_correctness_view())
-    for _i, _x in enumerate(semi_automatic_solver.view_file_with_chunkborders(False, False, LAST_CHUNK_LEN_FORMAT,
-                                                                              checksum_len_format=CHECKSUM_LEN_FORMAT)):
+    for _i, _x in enumerate(solver.view_file_with_chunkborders(False, False, LAST_CHUNK_LEN_FORMAT,
+                                                                              checksum_len_format=state.checksum_len_format)):
         if _i in invalid_rows:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row",
                                        style=incorrect_button_style))
-        elif chunk_tag[_i] == 3:
+        elif get_chunk_tag()[_i] == 3:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row",
                                        style=yellow_button_style))
@@ -506,11 +525,12 @@ def recalculate_view():
         else:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row"))
-    poss_packet_str = f"Possible invalid packets: {sum(common_packets)} | {','.join(['(#' + str(i) + ' / output:' + str(semi_automatic_solver.decoder.GEPP.packet_mapping[i]) + '), ' for i, x in enumerate(common_packets) if x])}"
+    poss_packet_str = f"Possible invalid packets: {sum(state.common_packets)} | {','.join(['(#' + str(i) + ' / output:' + str(solver.decoder.GEPP.packet_mapping[i]) + '), ' for i, x in enumerate(state.common_packets) if x])}"
     return html.Div(poss_packet_str), html.Div(child_view), html.Div("")
 
 
-if __name__ == '__main__':
+def _main_entry():
+    """Main entry point - initializes application state and starts the server."""
     parser = argparse.ArgumentParser()
     parser.add_argument("ini", metavar="ini", type=str, help="config file (ini)")
     parsed_args = parser.parse_args()
@@ -518,17 +538,20 @@ if __name__ == '__main__':
 
     cfg_worker = ConfigReadAndExecute(ini_file)
     x = cfg_worker.execute(return_decoder=True, skip_solve=True)[0]
-    semi_automatic_solver = SemiAutomaticReconstructionToolkit(x)
-    semi_automatic_solver.decoder.solve(partial=True)
-    CHECKSUM_LEN_FORMAT = cfg_worker.config[cfg_worker.config.sections()[0]].get("checksum_len_str", None)
-    if CHECKSUM_LEN_FORMAT == "":
-        CHECKSUM_LEN_FORMAT = None
-    init_globals(semi_automatic_solver)
+    solver = SemiAutomaticReconstructionToolkit(x)
+    solver.decoder.solve(partial=True)
+    checksum_len_format = cfg_worker.config[cfg_worker.config.sections()[0]].get("checksum_len_str", None)
+    if checksum_len_format == "":
+        checksum_len_format = None
+    
+    # Initialize the global application state
+    initialize_app_state(solver, checksum_len_format)
+    
+    init_globals(solver)
     callbacks(app)
     init_callback_handlers()  # Initialize the handler instances
     app.run(threaded=True, host="0.0.0.0")
-    """
-    # to enable debugging / dev tools:
-    app.run(host="0.0.0.0", dev_tools_ui=True, dev_tools_hot_reload=True, debug=True, threaded=True,
-            dev_tools_hot_reload_interval=10000, dev_tools_hot_reload_watch_interval=10000)
-    """
+
+
+if __name__ == '__main__':
+    _main_entry()

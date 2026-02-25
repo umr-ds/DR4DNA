@@ -47,7 +47,7 @@ class RandomShuffleRepair(FileSpecificRepair):
         self.error_matrix = np.zeros((self.gepp.b.shape[0], self.gepp.b.shape[1]), dtype=np.float32)
 
     def repair(self, *args, **kwargs):
-        if self.solutions is None or self.solutions == [] or self.chunk_tag is None or self.intersects is None or self.error_matrix is None:
+        if self.solutions is None or self.solutions == [] or self.chunk_tag is None or self.intersects is None or len(self.intersects) == 0 or self.error_matrix is None:
             return {"info": f"Calculate the corrupt packet using 'Find corrupt packet by shuffling' first.",
                     "update_b": False, "refresh_view": True}
         # find a corrupt chunk from chunk_tag and repair it using the diff calculated earlier.
@@ -74,7 +74,7 @@ class RandomShuffleRepair(FileSpecificRepair):
         return {"update_b": True, "refresh_view": True}
 
     def partial_repair(self, *args, **kwargs):
-        if self.intersects is None:
+        if self.intersects is None or len(self.intersects) == 0:
             return {"info": f"Calculate the corrupt packet(s) using 'Find corrupt packet by shuffling' first.",
                     "update_b": False, "refresh_view": True}
         max_found = 0
@@ -308,8 +308,14 @@ class RandomShuffleRepair(FileSpecificRepair):
                 # pop base if present and store for restoration; otherwise leave base None
                 base = self.intersects.pop(b'base') if b'base' in self.intersects else None
                 if all([len(x) == 0 for x in self.intersects.values()]):
-                    return {"info": "Found no viable solution, try multi error mode!", "update_b": False,
-                            "refresh_view": True}
+                    if self.semi_automatic_solver.multi_error_packets_mode:
+                        # In multi-error mode, continue to next solution pair instead of failing immediately
+                        if base is not None:
+                            self.intersects[b'base'] = base
+                        continue
+                    else:
+                        return {"info": "Found no viable solution, try multi error mode!", "update_b": False,
+                                "refresh_view": True}
                 if all([len(intersect) == 1 for intersect in self.intersects.values()]):
                     # calculate error_matrix by iterating over all corrupt packets with their diffs
                     for packet_diff_bytes, incorrect_packet in self.intersects.items():

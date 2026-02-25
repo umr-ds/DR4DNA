@@ -228,7 +228,7 @@ class MetadataRepair(RandomShuffleRepair):
         if (header_chunk is None or header_chunk.last_chunk_length is None or header_chunk.last_chunk_length < 0 or
                 header_chunk.last_chunk_length > len(gepp.b[0]) or not gepp.isSolved()):
             raise RuntimeError("GEPP must be solved and clean headerchunk must exist and be valid for last chunk padding calculation!")
-        return gepp.b[-1,:header_chunk.last_chunk_length] # FIXME: this may be reversed!
+        return gepp.b[-1][header_chunk.last_chunk_length:]  # Return padding bytes after the actual content
 
     @staticmethod
     def remove_equal_seed_non_representatives(sorted_A, sorted_b, set_representatives: typing.List[
@@ -266,11 +266,6 @@ class MetadataRepair(RandomShuffleRepair):
             [x for x in self.find_representative(equal_seed_rows, combined_rows, rows_with_metadata)],
             key=lambda x: x[2], reverse=True)
         return combined_rows, rows_with_metadata, equal_seed_rows, set_representatives
-
-        # Eleganteste Lösung:
-        # FIXME: Weitere Alternative Idee: Berechne alle Fehlerdeltas mit einschränkung, dass die Metadaten-Pakete bekannt
-        # sind: daher ist bekannt welche Deltas eine linearkombination sind und welche der eigentliche Fehler:
-        # Mittels Gauss-Elimination ist es dann möglich die Deltas für die jeweiligen Metadaten zu berechnen!
 
     def repair(self, *args, **kwargs):
         """

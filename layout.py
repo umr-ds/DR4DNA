@@ -5,14 +5,25 @@ import dash_daq as daq
 from dash_canvas.DashCanvas import DashCanvas
 
 def gen_app_layout(semi_automatic_solver, max_chunk_tag, force_load_plugins, all_plugins_childs, show_canvas, child):
-    return html.Div(children=[dcc.Interval(id='interval-component', interval=1 * 1000,  # in milliseconds
+    return html.Div(children=[
+                       # Hidden stores for state management
+                       dcc.Store(id='error-store', data=[]),
+                       dcc.Store(id='loading-state', data={'is_loading': False, 'message': ''}),
+                       
+                       # Error notification container
+                       html.Div(id="error-notification-container", children=[], className="error-container"),
+                       
+                       # Global loading indicator
+                       html.Div(id="global-loading-indicator", children=[], className="global-loading"),
+                       
+                       dcc.Interval(id='interval-component', interval=1 * 1000,  # in milliseconds
                                     n_intervals=0),
                        # Genereic overview:
                        html.H1(children='DR4DNA', id="analytics-input"),
                        html.H3(children=semi_automatic_solver.predict_file_type(), id="analytics-output"),
                        html.H3(children="Possible invalid packets:", id="analyze-count-output",
                                className="box"),
-                       html.Div([dcc.Loading(id="ls-loading-2", type="circle",
+                       html.Div([dcc.Loading(id="ls-loading-2", type="circle", color="#1890ff",
                                              children=[html.Div([html.Div(id="ls-loading-output-2")])])]),
                        # Single- vs Multi-Error-Mode:
                        html.Div([html.Label("Single"),
