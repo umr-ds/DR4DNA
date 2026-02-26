@@ -6,14 +6,13 @@ import typing
 from collections import Counter
 
 import numpy as np
-from PIL import Image
 from kaitaistruct import ValidationFailedError
+from PIL import Image
 
 import Kaitai2Html
-from repair_algorithms.FileSpecificRepair import FileSpecificRepair
-
-from repair_algorithms.PluginManager import PluginManager
 from repair_algorithms.bmp import Bmp
+from repair_algorithms.FileSpecificRepair import FileSpecificRepair
+from repair_algorithms.PluginManager import PluginManager
 
 
 class BmpFileRepair(FileSpecificRepair):
@@ -33,21 +32,29 @@ class BmpFileRepair(FileSpecificRepair):
     def parse_bmp(self, *args, **kwargs):
         start = 1 if self.use_header_chunk else 0
         start_offset = start * self.semi_automatic_solver.decoder.GEPP.b.shape[1]
-        error_pos = np.array([-1 for _ in
-                              range(self.gepp.b.shape[0] * self.gepp.b.shape[1])],
-                             dtype=np.float32)  # -1 <= unknown, 0 == correct, >=1 = incorrect
+        error_pos = np.array(
+            [-1 for _ in range(self.gepp.b.shape[0] * self.gepp.b.shape[1])], dtype=np.float32
+        )  # -1 <= unknown, 0 == correct, >=1 = incorrect
         self.semi_automatic_solver.parse_header("I")
         if self.semi_automatic_solver.headerChunk is not None:
-            last_chunk_garbage = self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+            last_chunk_garbage = (
+                self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+            )
         else:
             last_chunk_garbage = 0
         # try to parse the zipfile:
         if last_chunk_garbage > 0:
-            self.bmp_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(-1)[
-                             :-last_chunk_garbage].tobytes()
+            self.bmp_bytes = (
+                self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
+                .reshape(-1)[:-last_chunk_garbage]
+                .tobytes()
+            )
         else:
-            self.bmp_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(
-                -1).tobytes()
+            self.bmp_bytes = (
+                self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
+                .reshape(-1)
+                .tobytes()
+            )
         if self.reconstructed_bmp_bytes is None:
             self.reconstructed_bmp_bytes = bytearray(self.bmp_bytes)
         while True:
@@ -55,56 +62,102 @@ class BmpFileRepair(FileSpecificRepair):
                 res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 # check all known parameters + all other parameters for sanity:
                 if res.file_hdr.len_file != len(self.reconstructed_bmp_bytes):
-                    self.reconstructed_bmp_bytes[2:6] = len(self.reconstructed_bmp_bytes).to_bytes(4, "little")
-                    error_pos[start_offset + 2:start_offset + 6] = np.array(
-                        [a ^ b for a, b in zip(self.bmp_bytes[2:6], self.reconstructed_bmp_bytes[2:6])],
-                        dtype=error_pos.dtype)
+                    self.reconstructed_bmp_bytes[2:6] = len(self.reconstructed_bmp_bytes).to_bytes(
+                        4, "little"
+                    )
+                    error_pos[start_offset + 2 : start_offset + 6] = np.array(
+                        [
+                            a ^ b
+                            for a, b in zip(self.bmp_bytes[2:6], self.reconstructed_bmp_bytes[2:6])
+                        ],
+                        dtype=error_pos.dtype,
+                    )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 allowed_file_types = ["BM", "BA", "CI", "CP", "IC", "PT"]
                 if res.file_hdr.file_type not in allowed_file_types:
                     self.reconstructed_bmp_bytes[0:2] = allowed_file_types[0].encode("ascii")
-                    error_pos[start_offset:start_offset + 2] = np.array(
-                        [a ^ b for a, b in zip(self.bmp_bytes[0:2], self.reconstructed_bmp_bytes[0:2])],
-                        dtype=error_pos.dtype)
+                    error_pos[start_offset : start_offset + 2] = np.array(
+                        [
+                            a ^ b
+                            for a, b in zip(self.bmp_bytes[0:2], self.reconstructed_bmp_bytes[0:2])
+                        ],
+                        dtype=error_pos.dtype,
+                    )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
 
                 if res.file_hdr.reserved1 != 0:
                     self.reconstructed_bmp_bytes[6] = 0
                     self.reconstructed_bmp_bytes[7] = 0
-                    error_pos[start_offset + 6: start_offset + 8] = np.array(
-                        [a ^ b for a, b in zip(self.bmp_bytes[6:8], self.reconstructed_bmp_bytes[6:8])],
-                        dtype=error_pos.dtype)
+                    error_pos[start_offset + 6 : start_offset + 8] = np.array(
+                        [
+                            a ^ b
+                            for a, b in zip(self.bmp_bytes[6:8], self.reconstructed_bmp_bytes[6:8])
+                        ],
+                        dtype=error_pos.dtype,
+                    )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 if res.file_hdr.reserved2 != 0:
                     self.reconstructed_bmp_bytes[8] = 0
                     self.reconstructed_bmp_bytes[9] = 0
-                    error_pos[start_offset + 8: start_offset + 9] = np.array(
-                        [a ^ b for a, b in zip(self.bmp_bytes[8:10], self.reconstructed_bmp_bytes[8:10])],
-                        dtype=error_pos.dtype)
+                    error_pos[start_offset + 8 : start_offset + 9] = np.array(
+                        [
+                            a ^ b
+                            for a, b in zip(
+                                self.bmp_bytes[8:10], self.reconstructed_bmp_bytes[8:10]
+                            )
+                        ],
+                        dtype=error_pos.dtype,
+                    )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 if res.file_hdr.ofs_bitmap != res.dib_info.end:
                     self.reconstructed_bmp_bytes[10:14] = res.dib_info.end.to_bytes(4, "little")
-                    error_pos[start_offset + 10: start_offset + 14] = np.array(
-                        [a ^ b for a, b in zip(self.bmp_bytes[10:14], self.reconstructed_bmp_bytes[10:14])],
-                        dtype=error_pos.dtype)
+                    error_pos[start_offset + 10 : start_offset + 14] = np.array(
+                        [
+                            a ^ b
+                            for a, b in zip(
+                                self.bmp_bytes[10:14], self.reconstructed_bmp_bytes[10:14]
+                            )
+                        ],
+                        dtype=error_pos.dtype,
+                    )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
-                mask_mask = res.dib_info.color_mask_red ^ res.dib_info.color_mask_blue ^ res.dib_info.color_mask_alpha ^ res.dib_info.color_mask_green
-                if mask_mask != 2 ** res.dib_info.header.bits_per_pixel - 1 or (
-                        res.dib_info.header.bits_per_pixel == 32 and mask_mask | 0b11100000000000000000000000000000 != 2 ** res.dib_info.header.bits_per_pixel - 1):
-                    error_pos[start_offset + 54: start_offset + 54 + math.sqrt(
-                        res.dib_info.header.bits_per_pixel)] = np.array(
-                        [0.5 for _ in range(math.sqrt(res.dib_info.header.bits_per_pixel))], dtype=error_pos.dtype)
+                mask_mask = (
+                    res.dib_info.color_mask_red
+                    ^ res.dib_info.color_mask_blue
+                    ^ res.dib_info.color_mask_alpha
+                    ^ res.dib_info.color_mask_green
+                )
+                if mask_mask != 2**res.dib_info.header.bits_per_pixel - 1 or (
+                    res.dib_info.header.bits_per_pixel == 32
+                    and mask_mask | 0b11100000000000000000000000000000
+                    != 2**res.dib_info.header.bits_per_pixel - 1
+                ):
+                    error_pos[
+                        start_offset
+                        + 54 : start_offset
+                        + 54
+                        + math.sqrt(res.dib_info.header.bits_per_pixel)
+                    ] = np.array(
+                        [0.5 for _ in range(math.sqrt(res.dib_info.header.bits_per_pixel))],
+                        dtype=error_pos.dtype,
+                    )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
 
                 return res, error_pos  # np.array(error_pos).reshape(-1, self.gepp.b.shape[1])
             except ValidationFailedError as err:
                 if err.src_path == "/types/file_header/seq/0":
-                    self.reconstructed_bmp_bytes = self.reconstructed_bmp_bytes[:err.io.pos() - len(
-                        err.expected)] + err.expected + self.reconstructed_bmp_bytes[err.io.pos():]
+                    self.reconstructed_bmp_bytes = (
+                        self.reconstructed_bmp_bytes[: err.io.pos() - len(err.expected)]
+                        + err.expected
+                        + self.reconstructed_bmp_bytes[err.io.pos() :]
+                    )
                     for i, diff in enumerate([a - b for a, b in zip(err.expected, err.actual)]):
                         error_pos[
-                            (start * self.semi_automatic_solver.decoder.GEPP.b.shape[1]) + err.io.pos() - len(
-                                err.expected) + i] = 1 if diff != 0 else 0
+                            (start * self.semi_automatic_solver.decoder.GEPP.b.shape[1])
+                            + err.io.pos()
+                            - len(err.expected)
+                            + i
+                        ] = (1 if diff != 0 else 0)
                 else:
                     self.reconstructed_bmp_bytes = bytearray(self.bmp_bytes)
                     return None, None
@@ -113,13 +166,15 @@ class BmpFileRepair(FileSpecificRepair):
         self.use_header_chunk = use_header
 
     def repair(self, *args, **kwargs):
-        error_cols = sorted([x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True)
+        error_cols = sorted(
+            [x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True
+        )
         # find the row that that contains the first _no_inspect_chunks_ errors
         repair_row = -1
         diff_lst = []
         # we could iterate only over the chunk_tag values since we know that they are the only one with known errors
         for row_num, row in enumerate(self.error_matrix):
-            for col_no, diff, num, counter in error_cols[:self.num_repair_bytes]:
+            for col_no, diff, num, counter in error_cols[: self.num_repair_bytes]:
                 if diff < 1.0:
                     # those are either unknown errors (0.5) or correct columns (0.0) or columns of unknown status (-1.0)
                     break
@@ -134,14 +189,20 @@ class BmpFileRepair(FileSpecificRepair):
                 # we found a row that contains the first _no_inspect_chunks_ errors
                 break
         if repair_row == -1:
-            return {"info": f"Could not find a row that contains {self.num_repair_bytes} matching errors."}
+            return {
+                "info": f"Could not find a row that contains {self.num_repair_bytes} matching errors."
+            }
         # XOR repair the repair_row with all _no_inspect_chunks_ diffs
         new_row_content = bytearray(self.gepp.b[repair_row])
         for col_no, diff in diff_lst:
             new_row_content[col_no] = np.bitwise_xor(new_row_content[col_no], int(diff))
 
-        return {"update_b": True, "repair": {"corrected_row": repair_row, "corrected_value": new_row_content},
-                "refresh_view": True, "chunk_tag": self.chunk_tag}
+        return {
+            "update_b": True,
+            "repair": {"corrected_row": repair_row, "corrected_value": new_row_content},
+            "refresh_view": True,
+            "chunk_tag": self.chunk_tag,
+        }
 
     def reload_image(self, *args, **kwargs):
         self.parser_error_matrix = None
@@ -153,11 +214,19 @@ class BmpFileRepair(FileSpecificRepair):
             self.width = self.bmp_structure.dib_info.header.image_width
             self.height = self.bmp_structure.dib_info.header.image_height
         # convert sample_arry to image array by using all bitmasks on the elements of the sample_array
-        self.image_matrix = np.array(Image.open(io.BytesIO(self.reconstructed_bmp_bytes)).getdata(),
-                                     dtype=np.uint8).reshape(self.height, self.width, -1)
+        self.image_matrix = np.array(
+            Image.open(io.BytesIO(self.reconstructed_bmp_bytes)).getdata(), dtype=np.uint8
+        ).reshape(self.height, self.width, -1)
         res = self.find_errors_tags()
-        return {"update_b": False, "refresh_view": True, "width": self.width, "height": self.height,
-                "updates_canvas": True, "canvas_data": self.image_matrix, "chunk_tag": res["chunk_tag"]}
+        return {
+            "update_b": False,
+            "refresh_view": True,
+            "width": self.width,
+            "height": self.height,
+            "updates_canvas": True,
+            "canvas_data": self.image_matrix,
+            "chunk_tag": res["chunk_tag"],
+        }
 
     def is_compatible(self, meta_info, *args, **kwargs):
         # parse magic info string:
@@ -169,7 +238,8 @@ class BmpFileRepair(FileSpecificRepair):
         self.width = width[0]
         if self.reconstructed_bmp_bytes is not None:
             calculated_height = len(self.bmp_structure._raw_bitmap) / (
-                    self.width * self.bmp_structure.dib_info.header.bits_per_pixel)
+                self.width * self.bmp_structure.dib_info.header.bits_per_pixel
+            )
             if calculated_height.is_integer():
                 res_str = f"height must be set to = {calculated_height}"
                 if self.height == int(calculated_height):
@@ -187,7 +257,8 @@ class BmpFileRepair(FileSpecificRepair):
         self.height = height[1]
         if self.reconstructed_bmp_bytes is not None:
             calculated_width = len(self.bmp_structure._raw_bitmap) / (
-                    self.height * self.bmp_structure.dib_info.header.bits_per_pixel)
+                self.height * self.bmp_structure.dib_info.header.bits_per_pixel
+            )
             if calculated_width.is_integer():
                 res_str = f"Width must be set to = {calculated_width}"
                 if self.width == int(calculated_width):
@@ -207,42 +278,83 @@ class BmpFileRepair(FileSpecificRepair):
         else:
             write_height = self.height
         length = 2 if self.bmp_structure.dib_info.header.is_core_header else 4
-        self.reconstructed_bmp_bytes[width_pos:width_pos + length] = [x for x in self.width.to_bytes(length,
-                                                                                                     byteorder='little')]
-        self.reconstructed_bmp_bytes[height_pos:height_pos + length] = [x for x in write_height.to_bytes(length,
-                                                                                                         byteorder='little')]
+        self.reconstructed_bmp_bytes[width_pos : width_pos + length] = [
+            x for x in self.width.to_bytes(length, byteorder="little")
+        ]
+        self.reconstructed_bmp_bytes[height_pos : height_pos + length] = [
+            x for x in write_height.to_bytes(length, byteorder="little")
+        ]
         self.error_matrix = None  # invalidate error matrix
         return self.find_errors_tags()
 
     def get_ui_elements(self):
-        return {"btn-bmpfile-reload": {"type": "button", "text": "Reload image",
-                                       "callback": self.reload_image},
-                "btn-bmpfile-download": {"type": "download", "text": "Download image", "callback": self.download},
-                "kaitai-viewer": {"type": "kaitai_view", "text": "Show KaitaiStruct",
-                                  "callback": self.toogle_kaitai_viewer, "updates_b": False},
-                "txt-bmpfile-width": {"type": "int", "text": "Width of the image",
-                                      "callback": self.set_image_width},
-                "txt-bmpfile-height": {"type": "int", "text": "Height of the image",
-                                       "callback": self.set_image_height},
-                "cnvs-bmpfile-repair": {"type": "canvas", "width": self.width, "height": self.height},
-                "upload-bmpfile": {"type": "upload", "text": "Upload image", "callback": self.upload_image},
-                "btn-bmpfile-find-incorrect-pos": {"type": "button", "text": "Find incorrect positions",
-                                                   "callback": self.find_errors_tags},
-                "btn-bmpfile-find-columns": {"type": "button", "text": "Tag (in)correct columns",
-                                             "callback": self.get_incorrect_columns, "updates_b": False},
-                "btn-bmpfile-auto-repair": {"type": "button", "text": "Automatic Repair",
-                                            "callback": self.repair, "updates_b": False},
-                "txt-num-repair-bytes": {"type": "int",
-                                         "text": "Number of bytes to repair (should be <= incorrect columns)",
-                                         "default": 2, "callback": self.update_num_repair, "updates_b": False},
-                }
+        return {
+            "btn-bmpfile-reload": {
+                "type": "button",
+                "text": "Reload image",
+                "callback": self.reload_image,
+            },
+            "btn-bmpfile-download": {
+                "type": "download",
+                "text": "Download image",
+                "callback": self.download,
+            },
+            "kaitai-viewer": {
+                "type": "kaitai_view",
+                "text": "Show KaitaiStruct",
+                "callback": self.toogle_kaitai_viewer,
+                "updates_b": False,
+            },
+            "txt-bmpfile-width": {
+                "type": "int",
+                "text": "Width of the image",
+                "callback": self.set_image_width,
+            },
+            "txt-bmpfile-height": {
+                "type": "int",
+                "text": "Height of the image",
+                "callback": self.set_image_height,
+            },
+            "cnvs-bmpfile-repair": {"type": "canvas", "width": self.width, "height": self.height},
+            "upload-bmpfile": {
+                "type": "upload",
+                "text": "Upload image",
+                "callback": self.upload_image,
+            },
+            "btn-bmpfile-find-incorrect-pos": {
+                "type": "button",
+                "text": "Find incorrect positions",
+                "callback": self.find_errors_tags,
+            },
+            "btn-bmpfile-find-columns": {
+                "type": "button",
+                "text": "Tag (in)correct columns",
+                "callback": self.get_incorrect_columns,
+                "updates_b": False,
+            },
+            "btn-bmpfile-auto-repair": {
+                "type": "button",
+                "text": "Automatic Repair",
+                "callback": self.repair,
+                "updates_b": False,
+            },
+            "txt-num-repair-bytes": {
+                "type": "int",
+                "text": "Number of bytes to repair (should be <= incorrect columns)",
+                "default": 2,
+                "callback": self.update_num_repair,
+                "updates_b": False,
+            },
+        }
 
     def toogle_kaitai_viewer(self, *args, **kwargs):
         n_clicks = kwargs["c_ctx"].triggered[0]["value"]
         if n_clicks % 2 == 1:
-            kaitai_html = Kaitai2Html.kaitai2html(self.bmp_structure,
-                                                  chunk_length=self.semi_automatic_solver.decoder.GEPP.b.shape[1],
-                                                  chunk_offset=1 if self.use_header_chunk else 0)
+            kaitai_html = Kaitai2Html.kaitai2html(
+                self.bmp_structure,
+                chunk_length=self.semi_automatic_solver.decoder.GEPP.b.shape[1],
+                chunk_offset=1 if self.use_header_chunk else 0,
+            )
         else:
             kaitai_html = None
         return {"kaitai_content": kaitai_html, "refresh_view": False}
@@ -340,8 +452,12 @@ class BmpFileRepair(FileSpecificRepair):
             res["download"] = bytes(self.reconstructed_bmp_bytes)
             res["filename"] = "raw.bmp"
             return res
-        return {"update_b": False, "refresh_view": False, "download": bytes(self.reconstructed_bmp_bytes),
-                "filename": "raw.bmp"}
+        return {
+            "update_b": False,
+            "refresh_view": False,
+            "download": bytes(self.reconstructed_bmp_bytes),
+            "filename": "raw.bmp",
+        }
 
     def update_gepp(self, gepp):
         # invalidate error matrix:
@@ -354,16 +470,21 @@ class BmpFileRepair(FileSpecificRepair):
 
     def upload_image(self, *args, **kwargs):
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
-        content = kwargs['c_ctx'].triggered[0]['value']
+        content = kwargs["c_ctx"].triggered[0]["value"]
         if isinstance(content, list):
             content = content[0]
         if content is not None:
             try:
-                content_type, content_string = content.split(',')
-                new_error_part = np.array([a ^ b for a, b in
-                                           zip(base64.b64decode(
-                                               content_string),
-                                               self.reconstructed_bmp_bytes)], dtype=self.error_matrix.dtype)
+                content_type, content_string = content.split(",")
+                new_error_part = np.array(
+                    [
+                        a ^ b
+                        for a, b in zip(
+                            base64.b64decode(content_string), self.reconstructed_bmp_bytes
+                        )
+                    ],
+                    dtype=self.error_matrix.dtype,
+                )
                 self.error_matrix = self.error_matrix.reshape(-1)
 
                 for i in range(0, new_error_part.shape[0]):
@@ -410,29 +531,29 @@ def parse_jsonstring(json_string, shape=None, scale=1):
     except:
         return mask
     scale = 1
-    for obj in data['objects']:
-        if obj['type'] == 'image':
-            scale = obj['scaleX']
-        elif obj['type'] == 'path':
+    for obj in data["objects"]:
+        if obj["type"] == "image":
+            scale = obj["scaleX"]
+        elif obj["type"] == "path":
             pass  # not supported (yet?)
-        elif obj['type'] == 'line':
+        elif obj["type"] == "line":
             # calculate the middle of the line
-            scale_obj = obj['scaleX']
-            x1 = round((obj['left'] + obj['x1']) / scale * scale_obj)
-            x2 = round((obj['left'] + obj['x2']) / scale * scale_obj)
-            y1 = round((obj['top'] + obj['y1']) / scale * scale_obj)
-            y2 = round((obj['top'] + obj['y2']) / scale * scale_obj)
+            scale_obj = obj["scaleX"]
+            x1 = round((obj["left"] + obj["x1"]) / scale * scale_obj)
+            x2 = round((obj["left"] + obj["x2"]) / scale * scale_obj)
+            y1 = round((obj["top"] + obj["y1"]) / scale * scale_obj)
+            y2 = round((obj["top"] + obj["y2"]) / scale * scale_obj)
             # calculate the middle of the line
             x = int(np.floor((x1 + x2) / 2))
             y = int(np.floor((y1 + y2) / 2))
             mask[y, x] = 1
-        elif obj['type'] == 'rect':
+        elif obj["type"] == "rect":
             # calculate the middle of the rect
-            scale_obj = obj['scaleX']
-            x1 = round((obj['left']) / scale * scale_obj)
-            x2 = round((obj['left'] + obj['width']) / scale * scale_obj)
-            y1 = round((obj['top']) / scale * scale_obj)
-            y2 = round((obj['top'] + obj['height']) / scale * scale_obj)
+            scale_obj = obj["scaleX"]
+            x1 = round((obj["left"]) / scale * scale_obj)
+            x2 = round((obj["left"] + obj["width"]) / scale * scale_obj)
+            y1 = round((obj["top"]) / scale * scale_obj)
+            y2 = round((obj["top"] + obj["height"]) / scale * scale_obj)
             # calculate the middle of the rect
             x = int(np.floor((x1 + x2) / 2))
             y = int(np.floor((y1 + y2) / 2))

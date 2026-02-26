@@ -17,10 +17,10 @@ import threading
 import typing
 from dataclasses import dataclass, field
 
-from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
-from repair_algorithms.PluginManager import PluginManager
-from exceptions import SolverNotInitializedError, PluginManagerNotInitializedError
+from exceptions import PluginManagerNotInitializedError, SolverNotInitializedError
 from logger import get_logger
+from repair_algorithms.PluginManager import PluginManager
+from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
 
 logger = get_logger(__name__)
 
@@ -29,11 +29,11 @@ logger = get_logger(__name__)
 class AppState:
     """
     Centralized application state container.
-    
+
     This class holds all shared state that needs to be accessed across
     different callbacks and handlers. It provides a clean interface for
     state management and eliminates the need for global variables.
-    
+
     Attributes:
         semi_automatic_solver: Main solver instance for DNA data reconstruction
         common_packets: List of common packets identified during analysis
@@ -44,7 +44,7 @@ class AppState:
         checksum_len_format: Format string for checksum length
         plugin_manager: Manager for all loaded plugins
     """
-    
+
     semi_automatic_solver: typing.Optional[SemiAutomaticReconstructionToolkit] = None
     common_packets: list = field(default_factory=list)
     chunk_tag: list = field(default_factory=list)
@@ -53,14 +53,18 @@ class AppState:
     show_canvas: bool = False
     checksum_len_format: typing.Optional[str] = None
     plugin_manager: typing.Optional[PluginManager] = None
-    
+
     # Thread lock for thread-safe state modifications
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
-    
-    def initialize(self, solver: SemiAutomaticReconstructionToolkit, checksum_len_format: typing.Optional[str] = None):
+
+    def initialize(
+        self,
+        solver: SemiAutomaticReconstructionToolkit,
+        checksum_len_format: typing.Optional[str] = None,
+    ):
         """
         Initialize the application state with a solver instance.
-        
+
         Args:
             solver: The SemiAutomaticReconstructionToolkit instance
             checksum_len_format: Optional checksum length format string
@@ -77,14 +81,14 @@ class AppState:
             if self.plugin_manager is None:
                 self.plugin_manager = PluginManager()
             self.plugin_manager.plugin_instances.clear()
-    
+
     def get_solver(self) -> SemiAutomaticReconstructionToolkit:
         """
         Get the solver instance, raising an error if not initialized.
-        
+
         Returns:
             The SemiAutomaticReconstructionToolkit instance
-            
+
         Raises:
             SolverNotInitializedError: If the solver has not been initialized
         """
@@ -92,18 +96,18 @@ class AppState:
             logger.error("Solver accessed before initialization")
             raise SolverNotInitializedError()
         return self.semi_automatic_solver
-    
+
     def is_initialized(self) -> bool:
         """Check if the application state has been initialized."""
         return self.semi_automatic_solver is not None
-    
+
     def get_plugin_manager(self) -> PluginManager:
         """
         Get the plugin manager, raising an error if not initialized.
-        
+
         Returns:
             The PluginManager instance
-            
+
         Raises:
             PluginManagerNotInitializedError: If the plugin manager has not been initialized
         """
@@ -116,37 +120,37 @@ class AppState:
         """Thread-safe update of common packets."""
         with self._lock:
             self.common_packets = packets
-    
+
     def update_chunk_tag(self, tag: list):
         """Thread-safe update of chunk tags."""
         with self._lock:
             self.chunk_tag = tag
-    
+
     def get_chunk_tag(self) -> list:
         """Thread-safe access to chunk tags."""
         with self._lock:
             return self.chunk_tag.copy()
-    
+
     def update_column_tag(self, tag: list):
         """Thread-safe update of column tags."""
         with self._lock:
             self.column_tag = tag
-    
+
     def get_column_tag(self) -> list:
         """Thread-safe access to column tags."""
         with self._lock:
             return self.column_tag.copy()
-    
+
     def mark_content_updated(self):
         """Mark content as updated."""
         with self._lock:
             self.content_updated = True
-    
+
     def is_content_updated(self) -> bool:
         """Check if content has been updated."""
         with self._lock:
             return self.content_updated
-    
+
     def reset_content_updated(self):
         """Reset the content updated flag."""
         with self._lock:
@@ -161,18 +165,19 @@ app_state = AppState()
 def get_app_state() -> AppState:
     """
     Get the global application state instance.
-    
+
     Returns:
         The AppState singleton instance
     """
     return app_state
 
 
-def initialize_app_state(solver: SemiAutomaticReconstructionToolkit, 
-                         checksum_len_format: typing.Optional[str] = None):
+def initialize_app_state(
+    solver: SemiAutomaticReconstructionToolkit, checksum_len_format: typing.Optional[str] = None
+):
     """
     Initialize the global application state.
-    
+
     Args:
         solver: The SemiAutomaticReconstructionToolkit instance
         checksum_len_format: Optional checksum length format string

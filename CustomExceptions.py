@@ -1,5 +1,7 @@
 class CustomOutOfBoundsException(Exception):
-    def __init__(self, message, filename_pos, extra_pos, expected_filenmae_len=None, expected_extra_len=None):
+    def __init__(
+        self, message, filename_pos, extra_pos, expected_filenmae_len=None, expected_extra_len=None
+    ):
         self.filename_pos = filename_pos
         self.extra_pos = extra_pos
         self.expected_filenmae_len = expected_filenmae_len

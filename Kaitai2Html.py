@@ -1,8 +1,9 @@
 import logging
 import types
 from enum import Enum, EnumMeta
-from kaitaistruct import KaitaiStruct, ValidationNotEqualError
+
 from dash_extensions.enrich import html
+from kaitaistruct import KaitaiStruct, ValidationNotEqualError
 
 seen_set = set()
 
@@ -22,18 +23,28 @@ def kaitai2html(kaitai_struct, tree=None, chunk_length=None, chunk_offset=0):
             ret_attr = getattr(kaitai_struct, attr)
         except EOFError:
             top_level_entries.append(
-                html.Label("{}: {} ({})".format(attr, "<unable to parse!>", type(kaitai_struct).__name__),
-                           className="tree"))
+                html.Label(
+                    "{}: {} ({})".format(attr, "<unable to parse!>", type(kaitai_struct).__name__),
+                    className="tree",
+                )
+            )
             continue
         except ValidationNotEqualError as err:
             top_level_entries.append(
                 html.Label(
-                    '{}: {} - expected: "{}" ({})'.format(attr, err.actual, err.expected, type(kaitai_struct).__name__),
-                    className="tree"))
+                    '{}: {} - expected: "{}" ({})'.format(
+                        attr, err.actual, err.expected, type(kaitai_struct).__name__
+                    ),
+                    className="tree",
+                )
+            )
             continue
         except Exception as err:
-            top_level_entries.append(html.Label("{}: {} ({})".format(attr, err, type(kaitai_struct).__name__),
-                                                className="tree"))
+            top_level_entries.append(
+                html.Label(
+                    "{}: {} ({})".format(attr, err, type(kaitai_struct).__name__), className="tree"
+                )
+            )
             continue
         if isinstance(ret_attr, KaitaiStruct):
             # if yes, call kaitai2html on it
@@ -56,12 +67,21 @@ def kaitai2html(kaitai_struct, tree=None, chunk_length=None, chunk_offset=0):
                 attr_str = f"{attr}"
             next_attr = getattr(kaitai_struct, attr, chunk_length)
             if next_attr != kaitai_struct:
-                top_level_entries.append(html.Div(id={'type': 'kaitai_struct', 'name': tree + "." + attr},
-                                                  className="tree",
-                                                  children=[html.Label(attr_str),
-                                                            kaitai2html(getattr(kaitai_struct, attr, chunk_length),
-                                                                        tree + "." + attr, chunk_length,
-                                                                        chunk_offset)]))
+                top_level_entries.append(
+                    html.Div(
+                        id={"type": "kaitai_struct", "name": tree + "." + attr},
+                        className="tree",
+                        children=[
+                            html.Label(attr_str),
+                            kaitai2html(
+                                getattr(kaitai_struct, attr, chunk_length),
+                                tree + "." + attr,
+                                chunk_length,
+                                chunk_offset,
+                            ),
+                        ],
+                    )
+                )
         elif isinstance(ret_attr, Enum):
             continue
         elif isinstance(ret_attr, EnumMeta):
@@ -74,13 +94,28 @@ def kaitai2html(kaitai_struct, tree=None, chunk_length=None, chunk_offset=0):
             childs = []
             for i, item in enumerate(ret_attr):
                 if isinstance(item, KaitaiStruct):
-                    childs.append(kaitai2html(item, tree + "." + attr + "[" + str(i) + "]", chunk_length, chunk_offset))
-            top_level_entries.append(html.Div(id={'type': 'kaitai_struct', 'name': tree + "." + attr},
-                                              className="tree", children=[html.Label(attr), html.Div(childs)]))
+                    childs.append(
+                        kaitai2html(
+                            item, tree + "." + attr + "[" + str(i) + "]", chunk_length, chunk_offset
+                        )
+                    )
+            top_level_entries.append(
+                html.Div(
+                    id={"type": "kaitai_struct", "name": tree + "." + attr},
+                    className="tree",
+                    children=[html.Label(attr), html.Div(childs)],
+                )
+            )
         else:
             # if no, add the attribute to the html
             top_level_entries.append(
-                html.Label("{}: {} ({})".format(attr, ret_attr, type(kaitai_struct).__name__),
-                           className="tree"))
-    return html.Div(id={'type': 'kaitai_struct', 'index': tree + f" ({kaitai_struct.__repr__()})"},
-                    className="tree", children=top_level_entries)
+                html.Label(
+                    "{}: {} ({})".format(attr, ret_attr, type(kaitai_struct).__name__),
+                    className="tree",
+                )
+            )
+    return html.Div(
+        id={"type": "kaitai_struct", "index": tree + f" ({kaitai_struct.__repr__()})"},
+        className="tree",
+        children=top_level_entries,
+    )

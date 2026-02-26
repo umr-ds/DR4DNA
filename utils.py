@@ -12,29 +12,26 @@ from typing import List, Union
 def filter_nonprintable(text: str) -> str:
     """
     Remove non-printable characters from text.
-    
+
     Args:
         text: Input text string
-        
+
     Returns:
         Text with non-printable characters removed
     """
-    nonprintable = itertools.chain(
-        range(0x00, 0x20),
-        range(0x7f, 0xa0)
-    )
+    nonprintable = itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0))
     return text.translate({character: None for character in nonprintable})
 
 
 def bytes_to_printable_string(data: bytes) -> str:
     """
     Convert bytes to a printable string representation.
-    
+
     Non-printable characters are replaced with '.'.
-    
+
     Args:
         data: Input bytes
-        
+
     Returns:
         Printable string representation
     """
@@ -44,11 +41,11 @@ def bytes_to_printable_string(data: bytes) -> str:
 def bytes_to_hex_string(data: bytes, separator: str = " ") -> str:
     """
     Convert bytes to a hex string representation.
-    
+
     Args:
         data: Input bytes
         separator: Separator between hex values (default: space)
-        
+
     Returns:
         Hex string representation
     """
@@ -58,10 +55,10 @@ def bytes_to_hex_string(data: bytes, separator: str = " ") -> str:
 def hex_to_bytes(hex_string: str) -> bytes:
     """
     Convert a hex string to bytes.
-    
+
     Args:
         hex_string: Hex string (with or without spaces)
-        
+
     Returns:
         Bytes object
     """
@@ -71,10 +68,10 @@ def hex_to_bytes(hex_string: str) -> bytes:
 def is_printable_char(value: int) -> bool:
     """
     Check if a byte value represents a printable character.
-    
+
     Args:
         value: Byte value (0-255)
-        
+
     Returns:
         True if printable, False otherwise
     """
@@ -84,11 +81,11 @@ def is_printable_char(value: int) -> bool:
 def format_packet_id(packet_id: int, prefix: str = "#") -> str:
     """
     Format a packet ID for display.
-    
+
     Args:
         packet_id: Packet ID number
         prefix: Prefix string (default: "#")
-        
+
     Returns:
         Formatted packet ID string
     """
@@ -98,11 +95,11 @@ def format_packet_id(packet_id: int, prefix: str = "#") -> str:
 def format_chunk_id(chunk_id: int, width: int = 8) -> str:
     """
     Format a chunk ID for display.
-    
+
     Args:
         chunk_id: Chunk ID number
         width: Width for zero-padding (default: 8)
-        
+
     Returns:
         Formatted chunk ID string
     """
@@ -112,11 +109,11 @@ def format_chunk_id(chunk_id: int, width: int = 8) -> str:
 def validate_packet_id(packet_id: Union[str, int], max_value: int) -> tuple:
     """
     Validate a packet ID input.
-    
+
     Args:
         packet_id: Packet ID to validate (string or int)
         max_value: Maximum allowed value
-        
+
     Returns:
         Tuple of (is_valid: bool, packet_id: int or None, error_message: str or None)
     """
@@ -132,15 +129,16 @@ def validate_packet_id(packet_id: Union[str, int], max_value: int) -> tuple:
 def create_no_update_tuple(size: int = 14) -> tuple:
     """
     Create a tuple of dash.no_update values.
-    
+
     Args:
         size: Size of the tuple (default: 14)
-        
+
     Returns:
         Tuple of no_update values
-        
+
     Note:
         Import dash inside function to avoid circular imports
     """
     from dash import no_update
+
     return tuple([no_update] * size)

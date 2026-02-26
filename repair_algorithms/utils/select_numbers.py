@@ -1,5 +1,5 @@
 from collections import Counter, deque
-from typing import Iterable, List, Set, Tuple, Dict
+from typing import Dict, Iterable, List, Set, Tuple
 
 
 class _DinicFast:
@@ -78,8 +78,13 @@ class _DinicFast:
         return flow
 
 
-def select_numbers(input_map: Dict[int, Iterable[int]], n: int, unique_only: bool = True,
-                   use_flow_fallback: bool = True, flow_threshold_slots: int = 10000) -> List[Tuple[int, Set[int]]]:
+def select_numbers(
+    input_map: Dict[int, Iterable[int]],
+    n: int,
+    unique_only: bool = True,
+    use_flow_fallback: bool = True,
+    flow_threshold_slots: int = 10000,
+) -> List[Tuple[int, Set[int]]]:
     """
     Fast greedy selection of up to `n` unique numbers per input set.
 

@@ -5,13 +5,15 @@ Pytest fixtures and configuration for DR4DNA tests.
 This module provides shared fixtures and utilities for the test suite.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock, Mock
+
 import numpy as np
+import pytest
 
 
 class MockGEPP:
     """Mock GEPP class with numpy arrays."""
+
     def __init__(self):
         self.b = np.zeros((10, 8), dtype=np.uint8)
         self.A = np.zeros((10, 8), dtype=np.uint8)
@@ -20,6 +22,7 @@ class MockGEPP:
 
 class MockDecoder:
     """Mock Decoder class."""
+
     def __init__(self):
         self.GEPP = MockGEPP()
         self.use_headerchunk = False
@@ -28,6 +31,7 @@ class MockDecoder:
 
 class MockSolver:
     """Mock Solver class."""
+
     def __init__(self):
         self.decoder = MockDecoder()
         self.multi_error_packets_mode = False
@@ -64,7 +68,7 @@ def sample_column_tag():
 @pytest.fixture
 def sample_bytes():
     """Create sample byte data for testing."""
-    return bytes([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x00, 0x57, 0x6f, 0x72, 0x6c, 0x64])
+    return bytes([0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x00, 0x57, 0x6F, 0x72, 0x6C, 0x64])
 
 
 @pytest.fixture
@@ -88,29 +92,29 @@ def mock_dash_context():
 def mock_callback_response():
     """Create a mock callback response tuple."""
     from dash import no_update
+
     return (
         "Info message",
-        no_update, no_update, no_update,
-        no_update, no_update, no_update,
-        no_update, no_update, no_update,
-        no_update, no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
+        no_update,
         None,  # canvas_image_content
-        None   # kaitai_view
+        None,  # kaitai_view
     )
 
 
 # Test markers
 def pytest_configure(config):
     """Configure custom pytest markers."""
-    config.addinivalue_line(
-        "markers", "unit: mark test as a unit test"
-    )
-    config.addinivalue_line(
-        "markers", "integration: mark test as an integration test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
-    config.addinivalue_line(
-        "markers", "plugin: mark test as plugin-specific"
-    )
+    config.addinivalue_line("markers", "unit: mark test as a unit test")
+    config.addinivalue_line("markers", "integration: mark test as an integration test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
+    config.addinivalue_line("markers", "plugin: mark test as plugin-specific")

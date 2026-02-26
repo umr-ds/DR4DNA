@@ -32,33 +32,34 @@ from io import BytesIO
 from itertools import combinations
 from pathlib import Path
 from time import sleep
-import numpy as np
-import magic
-import crcmod
 
-from NOREC4DNA.file_update_coding import reduce_packet_to_chunk
-from NOREC4DNA.metadata_coding import parse_metadata_file
-from NOREC4DNA.norec4dna.GEPP import GEPP
-from NOREC4DNA.norec4dna.RU10Packet import RU10Packet
-from NOREC4DNA.norec4dna.helper.RU10Helper import from_true_false_list
-from NOREC4DNA.norec4dna.helper.helper_cpu_single_core import xor_numpy
+import crcmod
+import magic
+import numpy as np
+from numpy.linalg import matrix_rank
 
 import NOREC4DNA.norec4dna.helper as helper
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
+from NOREC4DNA.file_update_coding import reduce_packet_to_chunk
+from NOREC4DNA.invivo_window_decoder import load_fasta
+from NOREC4DNA.metadata_coding import parse_metadata_file
+from NOREC4DNA.norec4dna.GEPP import GEPP
 from NOREC4DNA.norec4dna.HeaderChunk import HeaderChunk
+from NOREC4DNA.norec4dna.helper.helper_cpu_single_core import xor_numpy
+from NOREC4DNA.norec4dna.helper.quaternary2Bin import tranlate_quat_to_byte
+from NOREC4DNA.norec4dna.helper.RU10Helper import from_true_false_list
+from NOREC4DNA.norec4dna.LTDecoder import LTDecoder
+from NOREC4DNA.norec4dna.OnlineDecoder import OnlineDecoder
 from NOREC4DNA.norec4dna.Packet import Packet
 from NOREC4DNA.norec4dna.RU10Decoder import RU10Decoder
-from NOREC4DNA.norec4dna.OnlineDecoder import OnlineDecoder
-from NOREC4DNA.norec4dna.LTDecoder import LTDecoder
-from numpy.linalg import matrix_rank
-from NOREC4DNA.invivo_window_decoder import load_fasta
-from NOREC4DNA.norec4dna.helper.quaternary2Bin import tranlate_quat_to_byte
+from NOREC4DNA.norec4dna.RU10Packet import RU10Packet
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
 
 
 class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
-    def __init__(self, decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder], metadata_list=None):
-
+    def __init__(
+        self, decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder], metadata_list=None
+    ):
         super().__init__(decoder)
         self.last_chunk_len_format = "I"
         self.checksum_len_format = None
@@ -133,8 +134,8 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         """
         # a = self.decoder.solve()
         # file_name = self.decoder.saveDecodedFile(return_file_name=True)
-        #tmp_packets = self.decoder.packets.copy()
-        #self.decoder_bkp = self.decoder
+        # tmp_packets = self.decoder.packets.copy()
+        # self.decoder_bkp = self.decoder
         self.decoder = type(self.decoder).from_config_map(self.decoder.config_map)
         # if we dont have a known base file, we have to decode the base version first
         print("Decoding base version...", flush=True)
@@ -142,11 +143,23 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         fasta_entries = load_fasta(self.decoder.file)
         # fasta_seqs = [seq for seq in fasta_entries.values() if base_dna_version_string not in seq]
         # store the fasta_seqs WITH metadata in a temporary list:
-        version_seqs = [seq for seq in fasta_entries.values() if self.contains_metadata(seq, [base_dna_version_string])]
-        metadata_seqs = [seq for seq in fasta_entries.values() if self.contains_metadata(seq, self.metadata_list)]
+        version_seqs = [
+            seq
+            for seq in fasta_entries.values()
+            if self.contains_metadata(seq, [base_dna_version_string])
+        ]
+        metadata_seqs = [
+            seq for seq in fasta_entries.values() if self.contains_metadata(seq, self.metadata_list)
+        ]
         # we must filter out any sequences containing metadata information (otherwise we would have to fallback to DR4DNA to revert the changed content due to the metadata insertion)
-        fasta_seqs = [seq for seq in fasta_entries.values() if not self.contains_metadata(seq, self.metadata_list)]
-        fasta_seqs = [seq for seq in fasta_seqs if not self.contains_metadata(seq, [base_dna_version_string])]
+        fasta_seqs = [
+            seq
+            for seq in fasta_entries.values()
+            if not self.contains_metadata(seq, self.metadata_list)
+        ]
+        fasta_seqs = [
+            seq for seq in fasta_seqs if not self.contains_metadata(seq, [base_dna_version_string])
+        ]
 
         # FIX ME: [x for x in fasta_seqs if x in ground_fasta],[x for x in ground_fasta if x not in fasta_seqs ]
         #  it seems like we omit some sequences during creation of the new version!?!? (org. version has 12 sequences not present in the new version!
@@ -166,11 +179,13 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         for seq in fasta_seqs:
             # revert seed spacing as it is a DNA-based method and thus not part of parse_raw_packet
             seq = self.decoder.revert_seed_spacing(seq, id_len_format)
-            packet = self.decoder.parse_raw_packet(BytesIO(tranlate_quat_to_byte(seq)).read(),
-                                                   crc_len_format=crc_len_format,
-                                                   number_of_chunks_len_format="",
-                                                   packet_len_format=packet_len_format,
-                                                   id_len_format=id_len_format)
+            packet = self.decoder.parse_raw_packet(
+                BytesIO(tranlate_quat_to_byte(seq)).read(),
+                crc_len_format=crc_len_format,
+                number_of_chunks_len_format="",
+                packet_len_format=packet_len_format,
+                id_len_format=id_len_format,
+            )
             self.decoder.input_new_packet(packet)
             self.decoder.packets.append(packet)
             if len(self.decoder.packets) >= self.decoder.static_number_of_chunks:
@@ -182,12 +197,15 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         if self.decoder.headerChunk is not None and self.decoder.headerChunk.file_name is not None:
             try:
                 Path(self.decoder.headerChunk.file_name.decode("utf-8")).rename(
-                    "v0_" + self.decoder.headerChunk.file_name.decode("utf-8"))
+                    "v0_" + self.decoder.headerChunk.file_name.decode("utf-8")
+                )
             except FileNotFoundError as e:
                 # if the file does not exist, we can safely ignore the error!
                 pass
         file_name = self.decoder.saveDecodedFile(
-            last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"), return_file_name=True)
+            last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"),
+            return_file_name=True,
+        )
         Path(file_name).rename("v0_" + file_name)
         return self.decoder
 
@@ -212,12 +230,13 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 # TODO: we must correctly handle reed-solomon / crc calculation:
                 #  either: 1) recalculate crc / rs for modified packet during encoding such that we do not have to change the code here or
                 #  2) keep the encoded packet as is and handle broken crc / rs during decoding (ignore, or check with unchanged version)
-                packet = self.decoder.parse_raw_packet(BytesIO(tranlate_quat_to_byte(reverted_dna_str)).read(),
-                                                       crc_len_format=self.decoder.config_map.get("crc_len_format", ""),
-                                                       number_of_chunks_len_format="",
-                                                       packet_len_format=self.decoder.config_map.get(
-                                                           "packet_len_format", ""),
-                                                       id_len_format=id_len_format)
+                packet = self.decoder.parse_raw_packet(
+                    BytesIO(tranlate_quat_to_byte(reverted_dna_str)).read(),
+                    crc_len_format=self.decoder.config_map.get("crc_len_format", ""),
+                    number_of_chunks_len_format="",
+                    packet_len_format=self.decoder.config_map.get("packet_len_format", ""),
+                    id_len_format=id_len_format,
+                )
                 used_chunks_list = from_true_false_list(self.decoder.removeAndXorAuxPackets(packet))
                 # self.decoder.input_new_packet(packet)
                 bin_dna_version_str = tranlate_quat_to_byte(base_dna_version_string)
@@ -225,26 +244,39 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 header_size = packet.get_packet_header_size()
 
                 offset_pos = find_result - header_size + len(bin_dna_version_str)
-                reduced = reduce_packet_to_chunk(packet.copy(), self,
-                                                 used_chunks_list[0])  # always the first (usually the header chunk!)
+                reduced = reduce_packet_to_chunk(
+                    packet.copy(), self, used_chunks_list[0]
+                )  # always the first (usually the header chunk!)
                 # get the offset of the changed chunk (index / position from the used_chunks_list!) from the reduced packet:
-                target_chunk, = struct.unpack("<B", reduced.data[offset_pos: offset_pos + 1])
+                (target_chunk,) = struct.unpack("<B", reduced.data[offset_pos : offset_pos + 1])
                 zeros_mask = np.zeros(len(packet.data), dtype=np.uint8)
-                zeros_mask[offset_pos - len(bin_dna_version_str) - 1:offset_pos + 1] = np.frombuffer(
-                    reduced.data[offset_pos - len(bin_dna_version_str) - 1:offset_pos + 1], dtype=np.uint8)
+                zeros_mask[
+                    offset_pos - len(bin_dna_version_str) - 1 : offset_pos + 1
+                ] = np.frombuffer(
+                    reduced.data[offset_pos - len(bin_dna_version_str) - 1 : offset_pos + 1],
+                    dtype=np.uint8,
+                )
                 # xor the packet data with the mask AND the target_chunk to revert the insertion of the version information:
                 repaired_data = xor_numpy(packet.data, zeros_mask)
                 # TODO: set content (data) of the packet to repaired_data and update decoder accordingly
-                res = RU10Packet(repaired_data, packet.used_packets, packet.total_number_of_chunks, packet.id,
-                                 read_only=True,
-                                 packet_len_format=packet.packet_len_format, crc_len_format=packet.crc_len_format,
-                                 number_of_chunks_len_format=packet.number_of_chunks_len_format,
-                                 id_len_format=id_len_format,
-                                 save_number_of_chunks_in_packet=packet.total_number_of_chunks is None)
+                res = RU10Packet(
+                    repaired_data,
+                    packet.used_packets,
+                    packet.total_number_of_chunks,
+                    packet.id,
+                    read_only=True,
+                    packet_len_format=packet.packet_len_format,
+                    crc_len_format=packet.crc_len_format,
+                    number_of_chunks_len_format=packet.number_of_chunks_len_format,
+                    id_len_format=id_len_format,
+                    save_number_of_chunks_in_packet=packet.total_number_of_chunks is None,
+                )
                 if used_chunks_list[target_chunk] not in solved_chunks:
                     solved_chunks[used_chunks_list[target_chunk]] = []
                 # solve to target_chunk and store the result of later parsing
-                reduced_packet = reduce_packet_to_chunk(res.copy(), self, used_chunks_list[target_chunk])
+                reduced_packet = reduce_packet_to_chunk(
+                    res.copy(), self, used_chunks_list[target_chunk]
+                )
                 # we must defer packet insertion as we might have split packets due to missing unchanged space for version-string insertion
                 solved_chunks[used_chunks_list[target_chunk]].append(reduced_packet)
             # after parsing all version packets, we can combine the data if more than one differing solution for a chunk exists
@@ -252,7 +284,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
             # TODO: for this we may replace the affected rows of GEPP.b
             for key, values in solved_chunks.items():
                 unique_data_parts = {bytes(v.data) for v in values}
-                #if len(unique_data_parts) > 1:
+                # if len(unique_data_parts) > 1:
                 tmp = np.zeros_like(self.decoder.GEPP.b[key], dtype=np.uint8)
                 # we must combine the parts: xor all parts with the original version, then xor them together and add the original version via xor:
                 for part in unique_data_parts:
@@ -265,7 +297,10 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
             # TODO: add logic for crc calculation. for now: just ignore the faulty crc in the header!
             file_name = self.decoder.saveDecodedFile(
                 last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"),
-                return_file_name=True, ignore_crc = True, print_to_output=False)
+                return_file_name=True,
+                ignore_crc=True,
+                print_to_output=False,
+            )
             Path(file_name).rename(f"v{i}_" + file_name)
 
     @staticmethod
@@ -283,12 +318,13 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                     r = reduce(lambda x, y: xor_numpy(x.astype("uint8"), y.astype("uint8")), elem)
                 else:
                     r = elem[0]
-                if np.array_equal(r.astype('uint8'), b):
+                if np.array_equal(r.astype("uint8"), b):
                     return [x.astype("uint8") for x in elem]
         return None
 
-    def repair_and_store_by_packet(self, chunk_id, packet_id, hex_value, clear_working_dir=False,
-                                   correctness_function=None):
+    def repair_and_store_by_packet(
+        self, chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None
+    ):
         # this function will be used if we have multiple invalid packets (and corrected chunks) to save multiple version,
         # where each saved version used a different possible packet to repair the chunk.
         bkp_A = self.decoder.GEPP.A.copy()
@@ -334,10 +370,18 @@ def init_args() -> argparse.Namespace:
     # metadata files (comma separated list of files containing metadata sequences that should be expected when decoding):
     # --unwanted_metadata_file /home/michael/Code/DR4DNA/NOREC4DNA/unwanted_meta.fasta
     metadata_arg_group = parser.add_mutually_exclusive_group(required=False)
-    metadata_arg_group.add_argument("--metadata_file", metavar="metafile", type=str,
-                                    help="file containing metadata in the fasta format")
-    metadata_arg_group.add_argument("--metadata", metavar="dmeta", type=str,
-                                    help="comma-separated list of metadata DNA sequences")
+    metadata_arg_group.add_argument(
+        "--metadata_file",
+        metavar="metafile",
+        type=str,
+        help="file containing metadata in the fasta format",
+    )
+    metadata_arg_group.add_argument(
+        "--metadata",
+        metavar="dmeta",
+        type=str,
+        help="comma-separated list of metadata DNA sequences",
+    )
     return parser.parse_args()
 
 

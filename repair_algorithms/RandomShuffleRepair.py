@@ -2,7 +2,7 @@ import typing
 from collections import Counter
 from functools import reduce
 
-#import norec4dna
+# import norec4dna
 import numpy
 import numpy as np
 
@@ -10,7 +10,6 @@ from NOREC4DNA import norec4dna
 from NOREC4DNA.norec4dna import helper
 from NOREC4DNA.norec4dna.GEPP import GEPP
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
-
 from repair_algorithms.PluginManager import PluginManager
 
 
@@ -32,51 +31,85 @@ class RandomShuffleRepair(FileSpecificRepair):
         start = 1 if self.use_header_chunk else 0
         self.semi_automatic_solver.parse_header("I")
         if self.semi_automatic_solver.headerChunk is not None:
-            last_chunk_garbage = self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+            last_chunk_garbage = (
+                self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+            )
         else:
             last_chunk_garbage = 0
         # try to parse the zipfile:
         if last_chunk_garbage > 0:
-            self.file_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(-1)[
-                :-last_chunk_garbage].tobytes()
+            self.file_bytes = (
+                self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
+                .reshape(-1)[:-last_chunk_garbage]
+                .tobytes()
+            )
         else:
-            self.file_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(
-                -1).tobytes()
+            self.file_bytes = (
+                self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
+                .reshape(-1)
+                .tobytes()
+            )
         if self.reconstructed_file_bytes is None:
             self.reconstructed_file_bytes = bytearray(self.file_bytes)
         self.error_matrix = np.zeros((self.gepp.b.shape[0], self.gepp.b.shape[1]), dtype=np.float32)
 
     def repair(self, *args, **kwargs):
-        if self.solutions is None or self.solutions == [] or self.chunk_tag is None or self.intersects is None or len(self.intersects) == 0 or self.error_matrix is None:
-            return {"info": f"Calculate the corrupt packet using 'Find corrupt packet by shuffling' first.",
-                    "update_b": False, "refresh_view": True}
+        if (
+            self.solutions is None
+            or self.solutions == []
+            or self.chunk_tag is None
+            or self.intersects is None
+            or len(self.intersects) == 0
+            or self.error_matrix is None
+        ):
+            return {
+                "info": f"Calculate the corrupt packet using 'Find corrupt packet by shuffling' first.",
+                "update_b": False,
+                "refresh_view": True,
+            }
         # find a corrupt chunk from chunk_tag and repair it using the diff calculated earlier.
         repaired_rows = 0
         for packet_diff, corrupt_packet in self.intersects.items():
             if len(corrupt_packet) > 1:
                 return {
                     "info": f"Found multiple possible corrupt packets for the same diff: {corrupt_packet}. "
-                            f"This indicates that the errors are linearly dependent!",
-                    "update_b": False, "refresh_view": True}
+                    f"This indicates that the errors are linearly dependent!",
+                    "update_b": False,
+                    "refresh_view": True,
+                }
             corrupt_packet = corrupt_packet[0]
             for i, row in enumerate(self.chunk_tag):
-                if row == 1 and self.semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[i, int(corrupt_packet)]:
+                if (
+                    row == 1
+                    and self.semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[
+                        i, int(corrupt_packet)
+                    ]
+                ):
                     # ensure, this row was reduced using the corrupt_packet
-                    new_row_content = helper.xor_numpy(self.semi_automatic_solver.decoder.GEPP.b[i],
-                                                       np.frombuffer(packet_diff, dtype="uint8")).astype("uint8")
-                    self.semi_automatic_solver.manual_repair(i, int(corrupt_packet), new_row_content)
+                    new_row_content = helper.xor_numpy(
+                        self.semi_automatic_solver.decoder.GEPP.b[i],
+                        np.frombuffer(packet_diff, dtype="uint8"),
+                    ).astype("uint8")
+                    self.semi_automatic_solver.manual_repair(
+                        i, int(corrupt_packet), new_row_content
+                    )
                     repaired_rows += 1
                     break
         if repaired_rows == 0:
             return {
                 "info": f"Could not find a chunk matching the corrupt packet. This usually only happens if the corrupt packet was not used for any row.",
-                "update_b": False, "refresh_view": True}
+                "update_b": False,
+                "refresh_view": True,
+            }
         return {"update_b": True, "refresh_view": True}
 
     def partial_repair(self, *args, **kwargs):
         if self.intersects is None or len(self.intersects) == 0:
-            return {"info": f"Calculate the corrupt packet(s) using 'Find corrupt packet by shuffling' first.",
-                    "update_b": False, "refresh_view": True}
+            return {
+                "info": f"Calculate the corrupt packet(s) using 'Find corrupt packet by shuffling' first.",
+                "update_b": False,
+                "refresh_view": True,
+            }
         max_found = 0
         for packet_diff, corrupt_packet_candidates in self.intersects.items():
             if len(corrupt_packet_candidates) > max_found:
@@ -89,19 +122,22 @@ class RandomShuffleRepair(FileSpecificRepair):
                 self.intersects[b"base"] = base
                 return {
                     "info": f"Found multiple error deltas with multiple possible corrupt packets: "
-                            f"This case is not yet implemented.\nTry increasing the number of random permutations!",
-                    "update_b": False, "refresh_view": True}
+                    f"This case is not yet implemented.\nTry increasing the number of random permutations!",
+                    "update_b": False,
+                    "refresh_view": True,
+                }
             # get the first error delta:
             error_delta = list(self.intersects.keys())[0]
-            res = self.semi_automatic_solver.constrained_repair(error_delta=np.frombuffer(error_delta, dtype="uint8"),
-                                                                possible_packets=[int(x) for x in
-                                                                                  self.intersects[error_delta]])
+            res = self.semi_automatic_solver.constrained_repair(
+                error_delta=np.frombuffer(error_delta, dtype="uint8"),
+                possible_packets=[int(x) for x in self.intersects[error_delta]],
+            )
             self.intersects[b"base"] = base
             return {"info": f"{res}", "update_b": False, "refresh_view": True}
 
     def generate_permutations(self, num_shuffles, input_order, include_original=True):
         rng = np.random.default_rng()
-        offset = (1 if include_original else 0)
+        offset = 1 if include_original else 0
         res = np.zeros((num_shuffles + offset, self.gepp.b.shape[0]), dtype=np.int32)
         j = 0
         i = offset
@@ -119,11 +155,17 @@ class RandomShuffleRepair(FileSpecificRepair):
         return res
 
     def calc_unique_diffs(self):
-        unique_diffs = np.zeros((1, self.semi_automatic_solver.decoder.GEPP.b.shape[1]), dtype="uint8")
+        unique_diffs = np.zeros(
+            (1, self.semi_automatic_solver.decoder.GEPP.b.shape[1]), dtype="uint8"
+        )
         for sol_i, solution in enumerate(self.solutions[1:]):
-            diff: numpy.ndarray = np.array([helper.xor_numpy(self.solutions[0].b[i], solution.b[i]) for i in
-                                            range(0, self.semi_automatic_solver.decoder.number_of_chunks)],
-                                           dtype="uint8")
+            diff: numpy.ndarray = np.array(
+                [
+                    helper.xor_numpy(self.solutions[0].b[i], solution.b[i])
+                    for i in range(0, self.semi_automatic_solver.decoder.number_of_chunks)
+                ],
+                dtype="uint8",
+            )
             if not np.any(diff):
                 # the solutions are identical
                 continue
@@ -136,26 +178,40 @@ class RandomShuffleRepair(FileSpecificRepair):
         """Process all rows for a pair of solutions and update self.intersects.
         Extracted from the long inner loop in find_packet_shuffle to make it testable.
         """
-        for row_i, row in enumerate(solution.b[:self.semi_automatic_solver.decoder.number_of_chunks]):
+        for row_i, row in enumerate(
+            solution.b[: self.semi_automatic_solver.decoder.number_of_chunks]
+        ):
             # get packet lists and set-based helpers
-            possible_packets_sol, possible_packets_sol_cmp, possible_packets_intersect, packet_intersect_for_row = \
-                self._get_packet_lists_for_row(solution, cmp_solution, sol_i, cmp_sol_i, row_i)
+            (
+                possible_packets_sol,
+                possible_packets_sol_cmp,
+                possible_packets_intersect,
+                packet_intersect_for_row,
+            ) = self._get_packet_lists_for_row(solution, cmp_solution, sol_i, cmp_sol_i, row_i)
             if not np.array_equal(row, cmp_solution.b[row_i]):
                 # we found a difference
-                to_append = helper.xor_numpy(row, cmp_solution.b[row_i]).astype('uint8')
-                if len(getattr(self, 'correct_incorrect_diff_lst', [])) == 0:
+                to_append = helper.xor_numpy(row, cmp_solution.b[row_i]).astype("uint8")
+                if len(getattr(self, "correct_incorrect_diff_lst", [])) == 0:
                     self.correct_incorrect_diff_lst = np.array(to_append)
                 else:
                     self.correct_incorrect_diff_lst = np.unique(
-                        np.vstack((np.array(self.correct_incorrect_diff_lst), to_append)), axis=0)
+                        np.vstack((np.array(self.correct_incorrect_diff_lst), to_append)), axis=0
+                    )
 
                 if len(self.correct_incorrect_diff_lst.shape) > 1:
                     diff_bytes = to_append
-                    if not all([np.array_equal(self.correct_incorrect_diff_lst[0], x) for x in
-                                self.correct_incorrect_diff_lst]):
+                    if not all(
+                        [
+                            np.array_equal(self.correct_incorrect_diff_lst[0], x)
+                            for x in self.correct_incorrect_diff_lst
+                        ]
+                    ):
                         # multiple different solutions -> record info (kept as in original code)
-                        info_str = getattr(self, 'info_str', "")
-                        self.info_str = info_str + "Found multiple different solutions, this might indicate that there are multiple incorrect packets. "
+                        info_str = getattr(self, "info_str", "")
+                        self.info_str = (
+                            info_str
+                            + "Found multiple different solutions, this might indicate that there are multiple incorrect packets. "
+                        )
                 else:
                     diff_bytes = self.correct_incorrect_diff_lst
 
@@ -163,29 +219,48 @@ class RandomShuffleRepair(FileSpecificRepair):
                 # build possible_packets list container as in original code
                 possible_packets = [possible_packets_intersect]
                 # update intersects using helper
-                self._update_intersects_with_diff(diff_bytes_lst, possible_packets, packet_intersect_for_row)
+                self._update_intersects_with_diff(
+                    diff_bytes_lst, possible_packets, packet_intersect_for_row
+                )
             else:
                 # rows are equal: update correct_packets set to remove candidates later
                 possible_packets_intersect = possible_packets_intersect
-                correct_packets = getattr(self, 'correct_packets', set())
+                correct_packets = getattr(self, "correct_packets", set())
                 correct_packets = correct_packets.union(possible_packets_intersect)
                 self.correct_packets = correct_packets
                 for diff_bytes in list(self.intersects.keys()):
-                    self.intersects[diff_bytes] = np.setdiff1d(self.intersects[diff_bytes], list(correct_packets)).tolist()
+                    self.intersects[diff_bytes] = np.setdiff1d(
+                        self.intersects[diff_bytes], list(correct_packets)
+                    ).tolist()
 
     def _get_packet_lists_for_row(self, solution, cmp_solution, sol_i, cmp_sol_i, row_i):
         """Return packet lists and derived intersections for a given row comparison.
         Returns: (possible_packets_sol, possible_packets_sol_cmp, possible_packets_intersect, packet_intersect_for_row)
         """
-        possible_packets_sol = [self.perms[sol_i][i] for i, x in
-                                enumerate(solution.chunk_to_used_packets[row_i]) if x]
-        possible_packets_sol_cmp = [self.perms[cmp_sol_i][i] for i, x in
-                                    enumerate(cmp_solution.chunk_to_used_packets[row_i]) if x]
-        possible_packets_intersect = np.setxor1d(possible_packets_sol, possible_packets_sol_cmp, assume_unique=True)
-        packet_intersect_for_row = np.intersect1d(possible_packets_sol, possible_packets_sol_cmp, assume_unique=True)
-        return possible_packets_sol, possible_packets_sol_cmp, possible_packets_intersect, packet_intersect_for_row
+        possible_packets_sol = [
+            self.perms[sol_i][i] for i, x in enumerate(solution.chunk_to_used_packets[row_i]) if x
+        ]
+        possible_packets_sol_cmp = [
+            self.perms[cmp_sol_i][i]
+            for i, x in enumerate(cmp_solution.chunk_to_used_packets[row_i])
+            if x
+        ]
+        possible_packets_intersect = np.setxor1d(
+            possible_packets_sol, possible_packets_sol_cmp, assume_unique=True
+        )
+        packet_intersect_for_row = np.intersect1d(
+            possible_packets_sol, possible_packets_sol_cmp, assume_unique=True
+        )
+        return (
+            possible_packets_sol,
+            possible_packets_sol_cmp,
+            possible_packets_intersect,
+            packet_intersect_for_row,
+        )
 
-    def _update_intersects_with_diff(self, diff_bytes_lst, possible_packets, packet_intersect_for_row):
+    def _update_intersects_with_diff(
+        self, diff_bytes_lst, possible_packets, packet_intersect_for_row
+    ):
         """Update self.intersects for a given list of diff_bytes and candidate packets.
         Mirrors the original in-place updates in _process_solution_pair.
         """
@@ -200,11 +275,15 @@ class RandomShuffleRepair(FileSpecificRepair):
                 print("WARNING: diff_bytes not in self.intersects.keys()!")
                 self.intersects[diff_bytes] = np.array(possible_packets, dtype=np.uint64)
             # intersect updated candidate list
-            self.intersects[diff_bytes] = np.intersect1d(self.intersects[diff_bytes], possible_packets)
+            self.intersects[diff_bytes] = np.intersect1d(
+                self.intersects[diff_bytes], possible_packets
+            )
             # remove packets that were used in both rows
-            self.intersects[diff_bytes] = np.setdiff1d(self.intersects[diff_bytes],
-                                                       np.array(packet_intersect_for_row, dtype=np.uint64),
-                                                       assume_unique=True).tolist()
+            self.intersects[diff_bytes] = np.setdiff1d(
+                self.intersects[diff_bytes],
+                np.array(packet_intersect_for_row, dtype=np.uint64),
+                assume_unique=True,
+            ).tolist()
 
     def sync_solution_generation(self, num_shuffles=None):
         """
@@ -216,20 +295,26 @@ class RandomShuffleRepair(FileSpecificRepair):
             self.num_shuffles = num_shuffles
         if self.num_shuffles - len(self.solutions) > 0:
             self.perms.extend(
-                self.generate_permutations(self.num_shuffles - len(self.solutions), range(0, self.gepp.b.shape[0]),
-                                           len(self.perms) == 0))
+                self.generate_permutations(
+                    self.num_shuffles - len(self.solutions),
+                    range(0, self.gepp.b.shape[0]),
+                    len(self.perms) == 0,
+                )
+            )
 
-            for permutation in self.perms[len(self.solutions):]:
+            for permutation in self.perms[len(self.solutions) :]:
                 # permutate A and b & solve:
-                tmp_gepp = GEPP(self.semi_automatic_solver.initial_A.copy()[permutation],
-                                self.semi_automatic_solver.initial_b.copy()[permutation])
+                tmp_gepp = GEPP(
+                    self.semi_automatic_solver.initial_A.copy()[permutation],
+                    self.semi_automatic_solver.initial_b.copy()[permutation],
+                )
                 tmp_gepp.solve()
 
                 # ensure that the order is correct / comparable
                 tmp_A = np.squeeze(tmp_gepp.A[tmp_gepp.result_mapping])
                 tmp_b = np.squeeze(tmp_gepp.b[tmp_gepp.result_mapping])
-                tmp_gepp.A = np.vstack((tmp_A, tmp_gepp.A[tmp_A.shape[0]:]))
-                tmp_gepp.b = np.vstack((tmp_b, tmp_gepp.b[tmp_b.shape[0]:]))
+                tmp_gepp.A = np.vstack((tmp_A, tmp_gepp.A[tmp_A.shape[0] :]))
+                tmp_gepp.b = np.vstack((tmp_b, tmp_gepp.b[tmp_b.shape[0] :]))
                 tmp_gepp.result_mapping = np.arange(tmp_gepp.b.shape[0])
                 # store the solution
                 self.solutions.append(tmp_gepp)
@@ -247,9 +332,11 @@ class RandomShuffleRepair(FileSpecificRepair):
             if res is None:
                 # the row is not a linear combination of other rows, restore the row and continue
                 row_mask[i] = True
-                intersects[unique_diffs[i].tobytes()] = intersects[b'base'].copy()
+                intersects[unique_diffs[i].tobytes()] = intersects[b"base"].copy()
             else:
-                row_to_lin_comb[unique_diffs[i].tobytes()] = res  # save the mapping to speed up later calculations
+                row_to_lin_comb[
+                    unique_diffs[i].tobytes()
+                ] = res  # save the mapping to speed up later calculations
         return intersects, row_to_lin_comb
 
     def find_packet_shuffle(self, *args, **kwargs):
@@ -264,12 +351,15 @@ class RandomShuffleRepair(FileSpecificRepair):
         correct_incorrect_diff_lst = []
         possible_packets = [[i for i in range(self.solutions[0].b.shape[0])]]
         # remove all packets that were not part of the first solution: (since we would not try to repair them...)
-        for packet_num, row in enumerate(self.semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[
-                                             :self.semi_automatic_solver.decoder.number_of_chunks].T):
+        for packet_num, row in enumerate(
+            self.semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[
+                : self.semi_automatic_solver.decoder.number_of_chunks
+            ].T
+        ):
             # chunk i was
             if not any(row) and packet_num in possible_packets[0]:
                 possible_packets[0].remove(packet_num)
-        self.intersects = {b'base': np.array(possible_packets.copy(), dtype="uint64")}
+        self.intersects = {b"base": np.array(possible_packets.copy(), dtype="uint64")}
         correct_packets = set()
         info_str = ""
         # predefine res_str and base to avoid referencing before assignment in all control paths
@@ -287,8 +377,12 @@ class RandomShuffleRepair(FileSpecificRepair):
         unique_diffs = self.calc_unique_diffs()
 
         if len(unique_diffs) > 1 and not self.semi_automatic_solver.multi_error_packets_mode:
-            return {"info": f"Found multiple diffs between solutions. This indicates multiple corrupt packets. "
-                            f"Turn on Multi-Error Mode to find them.", "update_b": False, "refresh_view": True}
+            return {
+                "info": f"Found multiple diffs between solutions. This indicates multiple corrupt packets. "
+                f"Turn on Multi-Error Mode to find them.",
+                "update_b": False,
+                "refresh_view": True,
+            }
         # remove all rows that are linear combinations of others,
         # for this we assume that a row with a low number of diffs is more likely to be a real error and
         # a higher number of diffs is more likely to be a linear combination of other rows.
@@ -297,64 +391,87 @@ class RandomShuffleRepair(FileSpecificRepair):
         self.intersects, row_to_lin_comb = self.remove_lin_comb(unique_diffs, self.intersects)
 
         for sol_i, solution in enumerate(self.solutions):
-            for cmp_sol_i, cmp_solution in enumerate(self.solutions):  # self.solution[sol_i:] instead of all?
+            for cmp_sol_i, cmp_solution in enumerate(
+                self.solutions
+            ):  # self.solution[sol_i:] instead of all?
                 if cmp_sol_i <= sol_i or (
-                        np.array_equal(solution.b, cmp_solution.b) and
-                        np.array_equal(solution.chunk_to_used_packets[self.perms[sol_i]],
-                                       cmp_solution.chunk_to_used_packets[self.perms[cmp_sol_i]])):
+                    np.array_equal(solution.b, cmp_solution.b)
+                    and np.array_equal(
+                        solution.chunk_to_used_packets[self.perms[sol_i]],
+                        cmp_solution.chunk_to_used_packets[self.perms[cmp_sol_i]],
+                    )
+                ):
                     continue
                 # delegate processing of per-row differences to helper
-                self._process_solution_pair(solution, cmp_solution, sol_i, cmp_sol_i, row_to_lin_comb)
+                self._process_solution_pair(
+                    solution, cmp_solution, sol_i, cmp_sol_i, row_to_lin_comb
+                )
                 # pop base if present and store for restoration; otherwise leave base None
-                base = self.intersects.pop(b'base') if b'base' in self.intersects else None
+                base = self.intersects.pop(b"base") if b"base" in self.intersects else None
                 if all([len(x) == 0 for x in self.intersects.values()]):
                     if self.semi_automatic_solver.multi_error_packets_mode:
                         # In multi-error mode, continue to next solution pair instead of failing immediately
                         if base is not None:
-                            self.intersects[b'base'] = base
+                            self.intersects[b"base"] = base
                         continue
                     else:
-                        return {"info": "Found no viable solution, try multi error mode!", "update_b": False,
-                                "refresh_view": True}
+                        return {
+                            "info": "Found no viable solution, try multi error mode!",
+                            "update_b": False,
+                            "refresh_view": True,
+                        }
                 if all([len(intersect) == 1 for intersect in self.intersects.values()]):
                     # calculate error_matrix by iterating over all corrupt packets with their diffs
                     for packet_diff_bytes, incorrect_packet in self.intersects.items():
                         # iterate over all chunks and check if the packet was used:
                         for i, is_affected in enumerate(
-                                self.semi_automatic_solver.get_corrupt_chunks_by_packets(incorrect_packet)):
+                            self.semi_automatic_solver.get_corrupt_chunks_by_packets(
+                                incorrect_packet
+                            )
+                        ):
                             if is_affected == 1:
-                                self.error_matrix[i] = helper.xor_numpy(self.error_matrix[i].astype("uint8"),
-                                                                        np.frombuffer(packet_diff_bytes, dtype="uint8"))
+                                self.error_matrix[i] = helper.xor_numpy(
+                                    self.error_matrix[i].astype("uint8"),
+                                    np.frombuffer(packet_diff_bytes, dtype="uint8"),
+                                )
                     # tag all known good packets in the chunk tag:
-                    self.chunk_tag = self.semi_automatic_solver.get_corrupt_chunks_by_packets(correct_packets,
-                                                                                              self.chunk_tag, tag_num=2)
+                    self.chunk_tag = self.semi_automatic_solver.get_corrupt_chunks_by_packets(
+                        correct_packets, self.chunk_tag, tag_num=2
+                    )
                     # tag all known bad packets in the chunkTag:
                     self.chunk_tag = self.semi_automatic_solver.get_corrupt_chunks_by_packets(
-                        [y for x in self.intersects.values() for y in x],
-                        self.chunk_tag)
+                        [y for x in self.intersects.values() for y in x], self.chunk_tag
+                    )
                     # in multiple error mode, the main UI will now correctly calculate the possible corrupt packets
                     # by using all packets tagged as correct!
                     # this plugin will additionally know the incorrect packets and their diff to the correct ones
                     return {
                         "info": f"{info_str}Found {len(self.intersects)} corrupt packets: #{[self.intersects[i][0] for i in self.intersects]}",
-                        "chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True}
+                        "chunk_tag": self.chunk_tag,
+                        "update_b": False,
+                        "refresh_view": True,
+                    }
                 else:
                     # create a string containing self.intersects values and the key in a new line:
                     res_str = ""
                     for key, value in self.intersects.items():
                         res_str += f"{len(value)} possible Packets: {value}\nError delta: {key}\n"
-                    info_str = f" Only partial solutions found, try increasing the number of permutations " \
-                               f"or perform multi-file automatic repair : \n{res_str}"
+                    info_str = (
+                        f" Only partial solutions found, try increasing the number of permutations "
+                        f"or perform multi-file automatic repair : \n{res_str}"
+                    )
                     if base is not None:
-                        self.intersects[b'base'] = base
+                        self.intersects[b"base"] = base
         if len(possible_packets) > 1 and len(self.intersects) > 1:
             if self.semi_automatic_solver.multi_error_packets_mode:
                 pass
             else:
-                self.intersects.pop(b'base')
+                self.intersects.pop(b"base")
                 return {
                     "info": f"{info_str}Found multiple corrupt packets: {self.intersects}. You might want to increase the number of permutations.",
-                    "update_b": False, "refresh_view": True}
+                    "update_b": False,
+                    "refresh_view": True,
+                }
         if info_str == "":
             info_str = "Found no corrupt packet: The LES seems to be correct (or the corrupt packet cannot be described by a linear combination of other packets)."
             # we could use this information to remove all packets that do HAVE a linear combination of other packets.
@@ -366,17 +483,33 @@ class RandomShuffleRepair(FileSpecificRepair):
         return rank_augmented_matrix > self.semi_automatic_solver.decoder.number_of_chunks
 
     def get_ui_elements(self):
-        return {"btn-shuffle-find-packet": {"type": "button", "text": "Find corrupt packet by shuffling",
-                                            "callback": self.find_packet_shuffle, "updates_b": False},
-                "btn-shuffle-repair": {"type": "button", "text": "Automatic repair (single-packet)",
-                                       "callback": self.repair, "updates_b": False},
-                "btn-try-partial-repair": {"type": "button", "text": "Automatic repair (multi-file)",
-                                           "callback": self.partial_repair, "updates_b": False},
-                "txt-number-of-shuffles": {"type": "int",
-                                           "text": "Number of random permutations to perform",
-                                           "default": 5, "callback": self.update_num_shuffle,
-                                           "updates_b": False},
-                }
+        return {
+            "btn-shuffle-find-packet": {
+                "type": "button",
+                "text": "Find corrupt packet by shuffling",
+                "callback": self.find_packet_shuffle,
+                "updates_b": False,
+            },
+            "btn-shuffle-repair": {
+                "type": "button",
+                "text": "Automatic repair (single-packet)",
+                "callback": self.repair,
+                "updates_b": False,
+            },
+            "btn-try-partial-repair": {
+                "type": "button",
+                "text": "Automatic repair (multi-file)",
+                "callback": self.partial_repair,
+                "updates_b": False,
+            },
+            "txt-number-of-shuffles": {
+                "type": "int",
+                "text": "Number of random permutations to perform",
+                "default": 5,
+                "callback": self.update_num_shuffle,
+                "updates_b": False,
+            },
+        }
 
     def update_num_shuffle(self, *args, **kwargs):
         num_shuffle = kwargs["c_ctx"].triggered[0]["value"]
@@ -472,13 +605,16 @@ class RandomShuffleRepair(FileSpecificRepair):
         This mirrors the behavior used in find_packet_shuffle and is extracted for testing.
         """
         self.modified_initial_sol = GEPP(self.solutions[0].A, self.solutions[0].b)
-        self.modified_initial_sol.chunk_to_used_packets = self.solutions[0].chunk_to_used_packets.copy()
+        self.modified_initial_sol.chunk_to_used_packets = self.solutions[
+            0
+        ].chunk_to_used_packets.copy()
         for i, row in enumerate(self.modified_initial_sol.A):
             if np.all(row == False):
                 # zero out b and chunk_to_used_packets for rows that are all zero in A
                 self.modified_initial_sol.b[i] = np.zeros_like(self.modified_initial_sol.b[i])
                 self.modified_initial_sol.chunk_to_used_packets[i] = np.zeros_like(
-                    self.modified_initial_sol.chunk_to_used_packets[i])
+                    self.modified_initial_sol.chunk_to_used_packets[i]
+                )
         self.solutions.append(self.modified_initial_sol)
         # copy permutation entry for the new solution
         if len(self.perms) > 0:

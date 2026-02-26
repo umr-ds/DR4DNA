@@ -24,11 +24,11 @@ class MyCustomRepair(FileSpecificRepair):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Initialize plugin-specific attributes
-    
+
     def is_compatible(self, meta_info):
         # Check if this plugin should be active for the given file type
         return meta_info == "MyFileType"
-    
+
     def get_ui_elements(self):
         # Define UI elements for this plugin
         return {
@@ -39,7 +39,7 @@ class MyCustomRepair(FileSpecificRepair):
                 "updates_b": False
             }
         }
-    
+
     def repair(self, *args, **kwargs):
         # Implement repair logic
         return {"update_b": True, "refresh_view": True}
@@ -70,38 +70,38 @@ from repair_algorithms.PluginManager import PluginManager
 class MyCustomRepair(FileSpecificRepair):
     """
     Custom repair plugin for [file type].
-    
+
     This plugin provides repair functionality for [description].
     """
-    
+
     def __init__(self, *args, **kwargs):
         """Initialize the plugin."""
         super().__init__(*args, **kwargs)
         # Plugin-specific initialization
         self.custom_attribute = None
-    
+
     def is_compatible(self, meta_info: str) -> bool:
         """
         Check if this plugin is compatible with the given file type.
-        
+
         Args:
             meta_info: File type information from magic detection
-        
+
         Returns:
             True if plugin should be active for this file type
         """
         # Example: activate for PDF files
         return meta_info == "PDF" or meta_info.lower().endswith(".pdf")
-    
+
     def on_load(self, *args, **kwargs):
         """Called when plugin is loaded/activated."""
         super().on_load(*args, **kwargs)
         # Additional initialization when plugin becomes active
-    
+
     def get_ui_elements(self) -> typing.Dict[str, typing.Dict]:
         """
         Define UI elements for this plugin.
-        
+
         Returns:
             Dictionary of UI element definitions
         """
@@ -126,21 +126,21 @@ class MyCustomRepair(FileSpecificRepair):
                 "updates_b": False
             }
         }
-    
+
     def analyze(self, *args, **kwargs):
         """Analyze errors in the current data."""
         try:
             # Access chunk tag
             chunk_tag = kwargs.get("chunk_tag", self.chunk_tag)
-            
+
             # Access GEPP matrix
             gepp = self.gepp
             b_matrix = gepp.b  # Data matrix
             A_matrix = gepp.A  # Coefficient matrix
-            
+
             # Perform analysis
             # ...
-            
+
             return {
                 "info": "Analysis complete",
                 "chunk_tag": updated_chunk_tag,
@@ -149,19 +149,19 @@ class MyCustomRepair(FileSpecificRepair):
             }
         except Exception as e:
             return {"info": f"Analysis failed: {str(e)}", "refresh_view": True}
-    
+
     def repair(self, *args, **kwargs):
         """Perform automatic repair."""
         try:
             # Access state
             chunk_tag = self.chunk_tag
-            
+
             # Find corrupt chunks
             # ...
-            
+
             # Perform repair
             # ...
-            
+
             return {
                 "update_b": True,
                 "refresh_view": True,
@@ -169,18 +169,18 @@ class MyCustomRepair(FileSpecificRepair):
             }
         except Exception as e:
             return {"info": f"Repair failed: {str(e)}", "refresh_view": True}
-    
+
     def update_threshold(self, *args, **kwargs):
         """Update error threshold from UI."""
         c_ctx = kwargs.get("c_ctx")
         if c_ctx:
             self.custom_attribute = c_ctx.triggered[0]["value"]
         return {"refresh_view": False, "update_b": False}
-    
+
     def update_gepp(self, gepp):
         """
         Called when GEPP is updated.
-        
+
         Args:
             gepp: New GEPP instance
         """
@@ -188,11 +188,11 @@ class MyCustomRepair(FileSpecificRepair):
         self.gepp = gepp
         # Invalidate cached data
         self.custom_attribute = None
-    
+
     def update_chunk_tag(self, chunk_tag):
         """
         Called when chunk tag is updated.
-        
+
         Args:
             chunk_tag: New chunk tag list
         """
@@ -216,11 +216,11 @@ def is_compatible(self, meta_info: str) -> bool:
     # Check file type
     if meta_info == "Bitmap":
         return True
-    
+
     # Check file extension
     if meta_info.lower().endswith(".bmp"):
         return True
-    
+
     # Always active (for generic plugins)
     return True
 ```
@@ -313,10 +313,10 @@ from repair_algorithms.PluginManager import PluginManager
 
 class SimpleTextRepair(FileSpecificRepair):
     """Simple text repair plugin."""
-    
+
     def is_compatible(self, meta_info):
         return "text" in meta_info.lower()
-    
+
     def get_ui_elements(self):
         return {
             "btn-find-errors": {
@@ -326,17 +326,17 @@ class SimpleTextRepair(FileSpecificRepair):
                 "updates_b": False
             }
         }
-    
+
     def find_errors(self, *args, **kwargs):
         """Find chunks with non-printable characters."""
         chunk_tag = kwargs.get("chunk_tag", self.chunk_tag)
-        
+
         for i, chunk in enumerate(self.gepp.b):
             # Check for non-printable characters
             has_non_printable = any(b < 32 or b > 126 for b in chunk)
             if has_non_printable:
                 chunk_tag[i] = 1  # Mark as corrupt
-        
+
         return {
             "chunk_tag": chunk_tag,
             "info": f"Found {sum(chunk_tag)} corrupt chunks",
@@ -361,15 +361,15 @@ from repair_algorithms.PluginManager import PluginManager
 
 class ImageRepair(FileSpecificRepair):
     """Image file repair plugin."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.image_width = None
         self.image_height = None
-    
+
     def is_compatible(self, meta_info):
         return meta_info in ["PNG", "JPEG", "Bitmap"]
-    
+
     def get_ui_elements(self):
         return {
             "btn-reload": {
@@ -385,13 +385,13 @@ class ImageRepair(FileSpecificRepair):
                 "updates_b": True
             }
         }
-    
+
     def reload_image(self, *args, **kwargs):
         """Reload and analyze image."""
         # Parse image header
         # Extract dimensions
         # Load into canvas
-        
+
         return {
             "update_b": False,
             "refresh_view": True,
@@ -400,13 +400,13 @@ class ImageRepair(FileSpecificRepair):
             "width": self.image_width,
             "height": self.image_height
         }
-    
+
     def repair(self, *args, **kwargs):
         """Perform image-specific repair."""
         # Analyze image structure
         # Find corrupted regions
         # Attempt repair
-        
+
         return {
             "update_b": True,
             "refresh_view": True,
@@ -487,15 +487,15 @@ from repair_algorithms.MyCustomRepair import MyCustomRepair
 
 
 class TestMyCustomRepair(unittest.TestCase):
-    
+
     def setUp(self):
         self.mock_solver = Mock()
         self.plugin = MyCustomRepair(semi_automatic_solver=self.mock_solver)
-    
+
     def test_is_compatible(self):
         self.assertTrue(self.plugin.is_compatible("PDF"))
         self.assertFalse(self.plugin.is_compatible("PNG"))
-    
+
     def test_get_ui_elements(self):
         ui = self.plugin.get_ui_elements()
         self.assertIn("btn-repair", ui)

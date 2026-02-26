@@ -1,6 +1,6 @@
-import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 from matplotlib.lines import Line2D
 
 """
@@ -30,31 +30,37 @@ def limit_rows(gr):
 
 
 # remove degenerated runs ( <100 packets)
-df = df[df["num_success"] > 100].groupby('num_rows').apply(limit_rows).reset_index(drop=True)
+df = df[df["num_success"] > 100].groupby("num_rows").apply(limit_rows).reset_index(drop=True)
 
 # remove Overhead > 20
 df = df[df["num_rows"] < 2391]
 
 df.to_csv("merged.csv", index=False)
-df["num_rows"] -= (df["num_chunks"][0] - 1)  # -1 since we removed one packet each
-ax = sns.violinplot(x='num_rows', y='num_success', data=df, cut=0, scale='count', showmedians=True)
+df["num_rows"] -= df["num_chunks"][0] - 1  # -1 since we removed one packet each
+ax = sns.violinplot(x="num_rows", y="num_success", data=df, cut=0, scale="count", showmedians=True)
 df["num_rows"] += df["num_chunks"][0]
 # add a horizontal line at the maximum value for each num_rows group
-min_num_rows = df['num_rows'].min()
-for i, (num_rows, group_data) in enumerate(df.groupby('num_rows')):
-    max_value = max(group_data['num_rows'].max(), 0)
+min_num_rows = df["num_rows"].min()
+for i, (num_rows, group_data) in enumerate(df.groupby("num_rows")):
+    max_value = max(group_data["num_rows"].max(), 0)
     group_violin = ax.collections[i]
     group_center = ax.get_xticks()[i]
     group_width = 1.0
-    ax.hlines(max_value, group_center - group_width / 2, group_center + group_width / 2, linewidth=1, colors='red')
+    ax.hlines(
+        max_value,
+        group_center - group_width / 2,
+        group_center + group_width / 2,
+        linewidth=1,
+        colors="red",
+    )
 
 # add a custom legend
-custom_legend = [Line2D([0], [0], color='red', lw=1, label='encoded packets')]
+custom_legend = [Line2D([0], [0], color="red", lw=1, label="encoded packets")]
 ax.legend(handles=custom_legend, bbox_to_anchor=(1, 0.1))
 
 plt.grid(True)
 plt.xlabel("Overhead")
 plt.ylabel("#non-critical packets")
-plt.gcf().savefig('merged.pdf', bbox_inches='tight')
-plt.gcf().savefig('merged.svg', format='svg', bbox_inches='tight')
+plt.gcf().savefig("merged.pdf", bbox_inches="tight")
+plt.gcf().savefig("merged.svg", format="svg", bbox_inches="tight")
 plt.show()

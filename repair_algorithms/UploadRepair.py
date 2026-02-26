@@ -7,16 +7,15 @@ import typing
 from collections import Counter
 
 import numpy as np
-from PIL import Image
 from kaitaistruct import ValidationFailedError
+from PIL import Image
 
 import Kaitai2Html
-from repair_algorithms.FileSpecificRepair import FileSpecificRepair
-
-from repair_algorithms.PluginManager import PluginManager
 from repair_algorithms.bmp import Bmp
+from repair_algorithms.FileSpecificRepair import FileSpecificRepair
+from repair_algorithms.PluginManager import PluginManager
 
-nonprintable = itertools.chain(range(0x00, 0x20), range(0x7f, 0xa0))
+nonprintable = itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0))
 
 
 class UploadRepair(FileSpecificRepair):
@@ -37,16 +36,24 @@ class UploadRepair(FileSpecificRepair):
         start_offset = start * self.semi_automatic_solver.decoder.GEPP.b.shape[1]
         self.semi_automatic_solver.parse_header("I")
         if self.semi_automatic_solver.headerChunk is not None:
-            last_chunk_garbage = self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+            last_chunk_garbage = (
+                self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
+            )
         else:
             last_chunk_garbage = 0
         # try to parse the zipfile:
         if last_chunk_garbage > 0:
-            self.file_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(-1)[
-                              :-last_chunk_garbage].tobytes()
+            self.file_bytes = (
+                self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
+                .reshape(-1)[:-last_chunk_garbage]
+                .tobytes()
+            )
         else:
-            self.file_bytes = self.gepp.b[start:self.semi_automatic_solver.decoder.number_of_chunks].reshape(
-                -1).tobytes()
+            self.file_bytes = (
+                self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
+                .reshape(-1)
+                .tobytes()
+            )
         if self.reconstructed_file_bytes is None:
             self.reconstructed_file_bytes = bytearray(self.file_bytes)
         self.error_matrix = np.zeros((self.gepp.b.shape[0], self.gepp.b.shape[1]), dtype=np.float32)
@@ -58,13 +65,15 @@ class UploadRepair(FileSpecificRepair):
         # user has to tag error regions
         # and a single position (maybe multiple pixel within a chunk) with the corrected color.
         # sort the columns by the number of entries with the same value (use only the rows from the corrupt packet)::
-        error_cols = sorted([x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True)
+        error_cols = sorted(
+            [x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True
+        )
         # find the row that that contains the first _no_inspect_chunks_ errors
         repair_row = -1
         diff_lst = []
         # we could iterate only over the chunk_tag values since we know that they are the only one with known errors
         for row_num, row in enumerate(self.error_matrix):
-            for col_no, diff, num, counter in error_cols[:self.num_repair_bytes]:
+            for col_no, diff, num, counter in error_cols[: self.num_repair_bytes]:
                 if diff < 1.0:
                     # those are either unknown errors (0.5) or correct columns (0.0) or columns of unknown status (-1.0)
                     break
@@ -79,14 +88,20 @@ class UploadRepair(FileSpecificRepair):
                 # we found a row that contains the first _no_inspect_chunks_ errors
                 break
         if repair_row == -1:
-            return {"info": f"Could not find a row that contains {self.num_repair_bytes} matching errors."}
+            return {
+                "info": f"Could not find a row that contains {self.num_repair_bytes} matching errors."
+            }
         # XOR repair the repair_row with all _no_inspect_chunks_ diffs
         new_row_content = bytearray(self.gepp.b[repair_row])
         for col_no, diff in diff_lst:
             new_row_content[col_no] = np.bitwise_xor(new_row_content[col_no], int(diff))
 
-        return {"update_b": True, "repair": {"corrected_row": repair_row, "corrected_value": new_row_content},
-                "refresh_view": True, "chunk_tag": self.chunk_tag}
+        return {
+            "update_b": True,
+            "repair": {"corrected_row": repair_row, "corrected_value": new_row_content},
+            "refresh_view": True,
+            "chunk_tag": self.chunk_tag,
+        }
 
     def repair_multi(self, *args, **kwargs):
         # calculate which chunks to use for which packet in common_packets to repair,
@@ -97,31 +112,63 @@ class UploadRepair(FileSpecificRepair):
         for row_num, row in enumerate(self.error_matrix):
             if sum(row) != 0:
                 # there was a modification in this row, we should add the row + the changed content to our result.
-                row_to_repaired_content[row_num] = bytearray([np.bitwise_xor(i,int(j)) for i,j in zip(self.gepp.b[row_num], self.error_matrix[row_num])])
+                row_to_repaired_content[row_num] = bytearray(
+                    [
+                        np.bitwise_xor(i, int(j))
+                        for i, j in zip(self.gepp.b[row_num], self.error_matrix[row_num])
+                    ]
+                )
 
-        return {"update_b": False, "repair_variations": {"variations": row_to_repaired_content, "generate_all": False}, "refresh_view": False,
-                "chunk_tag": self.chunk_tag}
+        return {
+            "update_b": False,
+            "repair_variations": {"variations": row_to_repaired_content, "generate_all": False},
+            "refresh_view": False,
+            "chunk_tag": self.chunk_tag,
+        }
 
     def is_compatible(self, meta_info):
         # upload (offline repair) is always possible...
         return True
 
     def get_ui_elements(self):
-        return {"btn-file-download": {"type": "download", "text": "Download (parsable) original file", "callback": self.download},
-                "upload-file": {"type": "upload", "text": "Upload file", "callback": self.upload_file},
-                "btn-upload-file-find-incorrect-pos": {"type": "button", "text": "Find incorrect positions",
-                                                       "callback": self.find_errors_tags},
-                "btn-upload-file-find-columns": {"type": "button", "text": "Tag (in)correct columns",
-                                                 "callback": self.get_incorrect_columns, "updates_b": False},
-                "btn-upload-file-auto-repair": {"type": "button", "text": "Automatic repair",
-                                                "callback": self.repair, "updates_b": False},
-                "btn-upload-file-multifile-repair": {"type": "button", "text": "Automatic repair (multi-file)",
-                                                     "callback": self.repair_multi, "updates_b": False},
-                "txt-upload-file-num-repair-bytes": {"type": "int",
-                                                     "text": "Number of bytes to repair (should be <= incorrect columns)",
-                                                     "default": 2, "callback": self.update_num_repair,
-                                                     "updates_b": False}
-                }
+        return {
+            "btn-file-download": {
+                "type": "download",
+                "text": "Download (parsable) original file",
+                "callback": self.download,
+            },
+            "upload-file": {"type": "upload", "text": "Upload file", "callback": self.upload_file},
+            "btn-upload-file-find-incorrect-pos": {
+                "type": "button",
+                "text": "Find incorrect positions",
+                "callback": self.find_errors_tags,
+            },
+            "btn-upload-file-find-columns": {
+                "type": "button",
+                "text": "Tag (in)correct columns",
+                "callback": self.get_incorrect_columns,
+                "updates_b": False,
+            },
+            "btn-upload-file-auto-repair": {
+                "type": "button",
+                "text": "Automatic repair",
+                "callback": self.repair,
+                "updates_b": False,
+            },
+            "btn-upload-file-multifile-repair": {
+                "type": "button",
+                "text": "Automatic repair (multi-file)",
+                "callback": self.repair_multi,
+                "updates_b": False,
+            },
+            "txt-upload-file-num-repair-bytes": {
+                "type": "int",
+                "text": "Number of bytes to repair (should be <= incorrect columns)",
+                "default": 2,
+                "callback": self.update_num_repair,
+                "updates_b": False,
+            },
+        }
 
     def update_num_repair(self, *args, **kwargs):
         num_repair_bytes = kwargs["c_ctx"].triggered[0]["value"]
@@ -207,8 +254,12 @@ class UploadRepair(FileSpecificRepair):
         return {"chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True}
 
     def download(self, *args, **kwargs):
-        return {"update_b": False, "refresh_view": False, "download": bytes(self.reconstructed_file_bytes),
-                "filename": "raw.bmp"}
+        return {
+            "update_b": False,
+            "refresh_view": False,
+            "download": bytes(self.reconstructed_file_bytes),
+            "filename": "raw.bmp",
+        }
 
     def update_gepp(self, gepp):
         # invalidate error matrix:
@@ -227,11 +278,16 @@ class UploadRepair(FileSpecificRepair):
             res = self.find_errors_tags(args, kwargs)
         if content is not None:
             try:
-                content_type, content_string = content.split(',')
-                new_error_part = np.array([a ^ b for a, b in
-                                           zip(base64.b64decode(
-                                               content_string),
-                                               self.reconstructed_file_bytes)], dtype=self.error_matrix.dtype)
+                content_type, content_string = content.split(",")
+                new_error_part = np.array(
+                    [
+                        a ^ b
+                        for a, b in zip(
+                            base64.b64decode(content_string), self.reconstructed_file_bytes
+                        )
+                    ],
+                    dtype=self.error_matrix.dtype,
+                )
                 self.error_matrix = self.error_matrix.reshape(-1)
 
                 for i in range(0, new_error_part.shape[0]):
@@ -245,7 +301,12 @@ class UploadRepair(FileSpecificRepair):
                 return res
             except Exception as ex:
                 raise ex
-        return {"chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True, "updates_canvas": False}
+        return {
+            "chunk_tag": self.chunk_tag,
+            "update_b": False,
+            "refresh_view": True,
+            "updates_canvas": False,
+        }
 
 
 mgr = PluginManager()

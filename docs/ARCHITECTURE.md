@@ -246,22 +246,22 @@ DR4DNAException
 ```
 1. Discovery
    └─> Scan repair_algorithms/ for .py files
-   
+
 2. Registration
    └─> PluginManager.register_plugin(PluginClass)
-   
+
 3. Instantiation
    └─> PluginClass(semi_automatic_solver, chunk_tag)
-   
+
 4. Compatibility Check
    └─> plugin.is_compatible(file_type)
-   
+
 5. Activation
    └─> plugin.on_load()
-   
+
 6. Operation
    └─> plugin callbacks executed
-   
+
 7. State Updates
    └─> plugin.update_gepp()
    └─> plugin.update_chunk_tag()

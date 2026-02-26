@@ -2,16 +2,25 @@ import math
 import re
 import time
 
-from flask import Blueprint, render_template, redirect, session, request, flash, url_for, jsonify, send_from_directory, \
-    current_app
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+    url_for,
+)
 from flask_cors import cross_origin
 from jinja2 import pass_eval_context
-
 
 main_page = Blueprint("main_page", __name__, template_folder="templates")
 
 
-def sanitize_input(in_str, regex=r'[^a-zA-Z0-9():/\\.,\-&?#= ]'):
+def sanitize_input(in_str, regex=r"[^a-zA-Z0-9():/\\.,\-&?#= ]"):
     result = re.sub(regex, "", in_str)
     return result
 
@@ -55,9 +64,9 @@ def to_ctime(eval_ctx, ms_time):
 @main_page.route("/drf")
 def main_index():
     print(current_app.app_context())
-    return render_template('inderx.html'), 200
+    return render_template("inderx.html"), 200
+
 
 @main_page.route("/impressum")
 def impressum():
     return render_template("impressum.html")
-
