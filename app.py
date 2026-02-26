@@ -1,6 +1,20 @@
 # -*- coding: utf-8 -*-
 # Run this app using: `python app.py <file.ini>` and
 # visit http://127.0.0.1:8050/ in your web browser.
+"""
+DR4DNA - DNA Data Reconstruction Application
+
+This application provides a semi-automatic reconstruction toolkit for
+DNA data storage experiments. It allows users to identify and repair
+corrupted packets in DNA-encoded data files.
+
+Usage:
+    python app.py <config.ini>
+
+Example:
+    python app.py eval/sleeping_beauty_RU10_w_error_correction_v1.ini
+"""
+
 import argparse
 import string
 import typing
@@ -17,9 +31,27 @@ from repair_algorithms import *  # NOSONAR
 from repair_algorithms.PluginManager import PluginManager
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 from state import get_app_state, initialize_app_state, AppState
-
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
+from constants import (
+    LAST_CHUNK_LEN_FORMAT,
+    EXTERNAL_STYLESHEETS,
+    META_TAGS,
+    COLOR_WHITE_BUTTON,
+    COLOR_INCORRECT_BUTTON,
+    COLOR_CORRECT_BUTTON,
+    COLOR_LIGHT_RED_BUTTON,
+    COLOR_YELLOW_BUTTON,
+    COLOR_CORRECT_COLORBLIND,
+    COLOR_INCORRECT_COLORBLIND,
+    CHUNK_TAG_UNKNOWN,
+    CHUNK_TAG_INVALID,
+    CHUNK_TAG_VALID,
+    CHUNK_TAG_UNDECODED,
+)
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 # Global callback handler instances (will be initialized after globals are set up)
 plugin_handler: typing.Optional[PluginCallbackHandler] = None
@@ -27,26 +59,25 @@ button_handler: typing.Optional[ButtonCallbackHandler] = None
 repair_handler: typing.Optional[RepairCallbackHandler] = None
 
 
-def update_point(trace, points, selector):
-    print(trace, points, selector)
+def update_point(trace: typing.Any, points: typing.Any, selector: typing.Any) -> typing.Any:
+    """Handle canvas point selection."""
+    logger.debug(f"Point selected: trace={trace}, points={points}, selector={selector}")
     return points.point_inds
 
 
-LAST_CHUNK_LEN_FORMAT = "I"
-EXTERNAL_STYLESHEETS = ["https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css"]
-META_TAGS = [{"name": "viewport", "content": "width=device-width, initial-scale=1"}]
+# Button style constants
+BUTTON_STYLE_WHITE = COLOR_WHITE_BUTTON
+BUTTON_STYLE_RED = COLOR_INCORRECT_BUTTON
+BUTTON_STYLE_GREEN = COLOR_CORRECT_BUTTON
+BUTTON_STYLE_LIGHT_RED = COLOR_LIGHT_RED_BUTTON
+BUTTON_STYLE_YELLOW = COLOR_YELLOW_BUTTON
 
-white_button_style = {'backgroundColor': 'white'}
-red_button_style = {'backgroundColor': 'red'}
-green_button_style = {'backgroundColor': 'green'}
-light_red_button_style = {'backgroundColor': 'lightcoral'}
-yellow_button_style = {'backgroundColor': 'yellow'}
+# Current button styles (can be changed by colorblind mode)
+correct_button_style = COLOR_CORRECT_BUTTON
+incorrect_button_style = COLOR_INCORRECT_BUTTON
 
-correct_button_style = green_button_style
-incorrect_button_style = red_button_style
-
-colorblind_correct = {'backgroundColor': '#84CE73'}
-colorblind_incorrect = {'backgroundColor': 'brown'}
+colorblind_correct = COLOR_CORRECT_COLORBLIND
+colorblind_incorrect = COLOR_INCORRECT_COLORBLIND
 
 # Module-level UI state (Dash components - not serialized in AppState)
 canvas_list = []
@@ -82,6 +113,12 @@ input_callback_handler = [Input('repair-button', 'n_clicks'),
 
 
 def init_globals(solver):
+    """
+    Initialize global application state.
+    
+    Args:
+        solver: SemiAutomaticReconstructionToolkit instance
+    """
     global chunk_tag, column_tag, child, force_load_plugins, all_plugins_childs, canvas_list
     state = get_app_state()
     plugin_manager = state.get_plugin_manager()
@@ -94,6 +131,11 @@ def init_globals(solver):
     
     chunk_tag = [0 for _ in range(len(solver.decoder.GEPP.b))]
     column_tag = [0 for _ in range(solver.decoder.GEPP.b.shape[1])]
+    
+    # Get file type for plugin compatibility checking
+    file_type = solver.predict_file_type()
+    logger.info(f"Initializing plugins for file type: {file_type}")
+    
     for plugin in plugin_manager.get_plugins():
         plugin_instance: FileSpecificRepair = plugin(solver,
                                                      chunk_tag=get_chunk_tag())
@@ -101,12 +143,22 @@ def init_globals(solver):
         plugin_instance.get_ui_elements()
         force_load_plugins.append(html.Button(plugin_instance.__class__.__name__, id={"type": "forceload-plugin-button",
                                                                                       "index": plugin_instance.__class__.__name__}))
-        if plugin_instance.is_compatible(solver.predict_file_type()):
-            plugin_childs = plugin_manager.load_plugin(plugin_instance)
-            if len(plugin_childs) > 0:
-                div = html.Div(id="plugin_" + plugin_instance.__class__.__name__.lower(), className="box",
-                               children=plugin_childs)
-                all_plugins_childs.append(div)
+        
+        # Check if plugin is compatible with the file type
+        try:
+            compatible = plugin_instance.is_compatible(file_type)
+            logger.debug(f"Plugin {plugin_instance.__class__.__name__} compatible with {file_type}: {compatible}")
+            
+            if compatible:
+                plugin_childs = plugin_manager.load_plugin(plugin_instance)
+                if len(plugin_childs) > 0:
+                    div = html.Div(id="plugin_" + plugin_instance.__class__.__name__.lower(), className="box",
+                                   children=plugin_childs)
+                    all_plugins_childs.append(div)
+                    logger.info(f"Auto-loaded plugin: {plugin_instance.__class__.__name__}")
+        except Exception as e:
+            logger.warning(f"Error checking compatibility for {plugin_instance.__class__.__name__}: {e}")
+    
     child.append(calculate_column_correctness_view())
     for i, x in enumerate(solver.view_file_with_chunkborders(False, False, LAST_CHUNK_LEN_FORMAT,
                                                                             checksum_len_format=state.checksum_len_format)):
@@ -204,7 +256,8 @@ def calculate_column_correctness_view():
                     id="column_indicator", className="column_entry_row", style={"margin-bottom": "10px"})
 
 
-def propagete_chunk_tag_update():
+def propagate_chunk_tag_update():
+    """Propagate chunk tag updates to all compatible plugins."""
     state = get_app_state()
     solver = state.get_solver()
     plugin_manager = state.get_plugin_manager()
@@ -214,6 +267,11 @@ def propagete_chunk_tag_update():
 
 
 def propagate_gepp_update():
+    """
+    Propagate GEPP updates to all plugins.
+    
+    Invalidates old chunk tags and propagates new GEPP to all active plugins.
+    """
     state = get_app_state()
     solver = state.get_solver()
     plugin_manager = state.get_plugin_manager()
@@ -227,7 +285,7 @@ def propagate_gepp_update():
             res = _plugin.update_gepp(solver.decoder.GEPP)
             if res is not None and "chunk_tag" in res:
                 update_chunk_tag(res["chunk_tag"])
-                propagete_chunk_tag_update()
+                propagate_chunk_tag_update()
 
 
 def repair_chunks(repair_id, hex_value):
@@ -257,18 +315,36 @@ def repair_chunks(repair_id, hex_value):
     [Input({'type': 'e_row', 'index': MATCH}, 'n_clicks'),
      Input({'index': MATCH, 'type': 'e_row'}, 'n_clicks')],
     prevent_initial_call=True)
-def change_button_style(n_clicks, n_clicks2):
+def change_button_style(n_clicks: int, n_clicks2: int) -> typing.Dict:
+    """
+    Handle chunk row button style changes.
+    
+    Cycles through states: unknown -> invalid -> valid -> unknown
+    
+    Args:
+        n_clicks: Click count from first input
+        n_clicks2: Click count from second input
+        
+    Returns:
+        Button style dictionary
+    """
     clicked_line = ctx.triggered_id["index"]
-    if get_chunk_tag()[clicked_line] == 3:
-        # the selected chunk is not decoded yet, return yellow and don't update the state.
-        return yellow_button_style
-    update_single_element_chunk_tag(clicked_line, (get_chunk_tag()[clicked_line] + 1) % 3)
-    if get_chunk_tag()[clicked_line] == 1:
+    current_tag = get_chunk_tag()[clicked_line]
+    
+    if current_tag == CHUNK_TAG_UNDECODED:
+        # Undecoded chunk - return yellow
+        return BUTTON_STYLE_YELLOW
+    
+    # Cycle to next state
+    new_tag = (current_tag + 1) % 3
+    update_single_element_chunk_tag(clicked_line, new_tag)
+    
+    if new_tag == CHUNK_TAG_INVALID:
         return incorrect_button_style
-    elif get_chunk_tag()[clicked_line] == 2:
+    elif new_tag == CHUNK_TAG_VALID:
         return correct_button_style
     else:
-        return white_button_style
+        return BUTTON_STYLE_WHITE
 
 
 def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
@@ -314,7 +390,7 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
                     # we do not propagate this change...
                     # if we have a non-printable character in hex-view and "." in txt view, skip it...
                     if not (32 <= int(hex_vals[_i], 16) <= 127) and val == ".":
-                        print("Warning: non printable character in hex-view and '.' in txt-view. Skipping...")
+                        logger.warning("Non-printable character in hex-view and '.' in txt-view. Skipping...")
                     else:
                         hex_vals[_i] = f"{ord(val):02x}"
                 res_hex = " ".join(hex_vals)
@@ -387,7 +463,7 @@ def init_callback_handlers():
     button_handler = ButtonCallbackHandler(
         state, recalculate_view, propagate_gepp_update,
         get_chunk_tag, update_chunk_tag, reset_chunk_tag, reset_column_tag,
-        propagete_chunk_tag_update, repair_chunks
+        propagate_chunk_tag_update, repair_chunks
     )
 
     repair_handler = RepairCallbackHandler(repair_callback, repair_chunks)
@@ -497,10 +573,10 @@ def recalculate_view():
                                                                            solver.multi_error_packets_mode)  # [:semi_automatic_solver.decoder.GEPP.m]
     not_used_packets = solver.calculate_unused_packets()
     state.common_packets = [(not not_used_packets[_i]) and state.common_packets[_i] for _i, _x in enumerate(state.common_packets)]
-    print(
-        f"The following packets were not used for the reconstruction: {[_i for _i, j in enumerate(not_used_packets) if j]}")
-    print("potentially invalid Packets:")
-    print(" ".join(map(lambda x: "1" if x else "0", state.common_packets)), flush=True)
+    unused_packet_ids = [_i for _i, j in enumerate(not_used_packets) if j]
+    logger.info(f"The following packets were not used for the reconstruction: {unused_packet_ids}")
+    common_packets_str = " ".join(map(lambda x: "1" if x else "0", state.common_packets))
+    logger.info(f"Potentially invalid packets: {common_packets_str}")
     rem_possible_chunks = solver.get_possible_invalid_chunks_from_common_packets(state.common_packets)
     # add an indicator for the column correctness:
     child_view.append(calculate_column_correctness_view())
@@ -510,10 +586,10 @@ def recalculate_view():
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row",
                                        style=incorrect_button_style))
-        elif get_chunk_tag()[_i] == 3:
+        elif get_chunk_tag()[_i] == CHUNK_TAG_UNDECODED:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row",
-                                       style=yellow_button_style))
+                                       style=BUTTON_STYLE_YELLOW))
         elif _i in valid_rows:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row",
@@ -521,7 +597,7 @@ def recalculate_view():
         elif rem_possible_chunks[_i]:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row",
-                                       style=light_red_button_style))
+                                       style=BUTTON_STYLE_LIGHT_RED))
         else:
             child_view.append(html.Div([html.H4(f"{str(_i).zfill(8)}", id={'type': 'e_row_h', 'index': _i}), _x],
                                        id={'type': 'e_row', 'index': _i}, className="entry_row"))

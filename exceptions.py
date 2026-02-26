@@ -1,159 +1,86 @@
 # -*- coding: utf-8 -*-
 """
-Custom exception hierarchy for DR4DNA.
+Custom exceptions for DR4DNA application.
 
-This module provides a comprehensive set of exceptions for better error handling
-and debugging throughout the application.
+Provides specific exception types for better error handling and reporting.
 """
 
 
-class DR4DNAException(Exception):
-    """Base exception for all DR4DNA-specific errors."""
+class DR4DNAError(Exception):
+    """Base exception for all DR4DNA errors."""
+    pass
+
+
+class ApplicationNotInitializedError(DR4DNAError):
+    """Raised when the application is accessed before initialization."""
     
-    def __init__(self, message, error_code=None, details=None):
-        super().__init__(message)
-        self.message = message
-        self.error_code = error_code or "UNKNOWN_ERROR"
-        self.details = details or {}
+    def __init__(self, component: str = "Application"):
+        self.component = component
+        super().__init__(f"{component} not initialized!")
+
+
+class SolverNotInitializedError(ApplicationNotInitializedError):
+    """Raised when the solver is accessed before initialization."""
     
-    def to_dict(self):
-        """Convert exception to dictionary for logging/API responses."""
-        return {
-            "error_code": self.error_code,
-            "message": self.message,
-            "details": self.details
-        }
+    def __init__(self):
+        super().__init__("Solver")
 
 
-class ConfigurationException(DR4DNAException):
-    """Raised when there's an issue with application configuration."""
+class PluginManagerNotInitializedError(ApplicationNotInitializedError):
+    """Raised when the plugin manager is accessed before initialization."""
     
-    def __init__(self, message, config_key=None, invalid_value=None):
-        super().__init__(
-            message,
-            error_code="CONFIG_ERROR",
-            details={"config_key": config_key, "invalid_value": invalid_value}
-        )
+    def __init__(self):
+        super().__init__("PluginManager")
 
 
-class PluginException(DR4DNAException):
-    """Base exception for plugin-related errors."""
+class ValidationError(DR4DNAError):
+    """Raised when data validation fails."""
+    pass
+
+
+class PacketIDError(DR4DNAError):
+    """Raised when there's an error with packet ID validation or usage."""
+    pass
+
+
+class ChunkTagError(DR4DNAError):
+    """Raised when there's an error with chunk tagging."""
+    pass
+
+
+class RepairError(DR4DNAError):
+    """Raised when a repair operation fails."""
+    pass
+
+
+class NoSolutionError(DR4DNAError):
+    """Raised when no solution can be found."""
+    pass
+
+
+class MultipleSolutionsError(DR4DNAError):
+    """Raised when multiple solutions are found but only one is expected."""
+    pass
+
+
+class PluginError(DR4DNAError):
+    """Raised when a plugin operation fails."""
+    pass
+
+
+class PluginCompatibilityError(PluginError):
+    """Raised when a plugin is not compatible with the current file type."""
+    pass
+
+
+class FileParseError(DR4DNAError):
+    """Raised when file parsing fails."""
     
-    def __init__(self, message, plugin_name=None, error_code="PLUGIN_ERROR"):
-        super().__init__(
-            message,
-            error_code=error_code,
-            details={"plugin_name": plugin_name}
-        )
+    def __init__(self, file_type: str, message: str):
+        self.file_type = file_type
+        super().__init__(f"Failed to parse {file_type} file: {message}")
 
 
-class PluginLoadError(PluginException):
-    """Raised when a plugin fails to load."""
-    
-    def __init__(self, plugin_name, original_error=None):
-        super().__init__(
-            f"Failed to load plugin '{plugin_name}': {str(original_error)}",
-            plugin_name=plugin_name,
-            error_code="PLUGIN_LOAD_ERROR"
-        )
-        self.original_error = original_error
-
-
-class PluginExecutionError(PluginException):
-    """Raised when a plugin execution fails."""
-    
-    def __init__(self, plugin_name, operation, original_error=None):
-        super().__init__(
-            f"Plugin '{plugin_name}' failed during {operation}: {str(original_error)}",
-            plugin_name=plugin_name,
-            error_code="PLUGIN_EXECUTION_ERROR"
-        )
-        self.original_error = original_error
-        self.operation = operation
-
-
-class PluginCompatibilityError(PluginException):
-    """Raised when a plugin is incompatible with the current state."""
-    
-    def __init__(self, plugin_name, reason=None):
-        super().__init__(
-            f"Plugin '{plugin_name}' is incompatible: {reason or 'unknown reason'}",
-            plugin_name=plugin_name,
-            error_code="PLUGIN_COMPATIBILITY_ERROR"
-        )
-
-
-class DecoderException(DR4DNAException):
-    """Base exception for decoder-related errors."""
-    
-    def __init__(self, message, error_code="DECODER_ERROR"):
-        super().__init__(message, error_code=error_code)
-
-
-class DecodeError(DecoderException):
-    """Raised when decoding fails."""
-    
-    def __init__(self, message, chunk_id=None, packet_id=None):
-        super().__init__(
-            message,
-            error_code="DECODE_ERROR",
-            details={"chunk_id": chunk_id, "packet_id": packet_id}
-        )
-
-
-class RepairException(DR4DNAException):
-    """Base exception for repair-related errors."""
-    
-    def __init__(self, message, error_code="REPAIR_ERROR"):
-        super().__init__(message, error_code=error_code)
-
-
-class RepairValidationError(RepairException):
-    """Raised when repair validation fails."""
-    
-    def __init__(self, message, chunk_id=None, invalid_data=None):
-        super().__init__(
-            message,
-            error_code="REPAIR_VALIDATION_ERROR",
-            details={"chunk_id": chunk_id, "invalid_data": invalid_data}
-        )
-
-
-class StateException(DR4DNAException):
-    """Base exception for state management errors."""
-    
-    def __init__(self, message, error_code="STATE_ERROR"):
-        super().__init__(message, error_code=error_code)
-
-
-class StateValidationError(StateException):
-    """Raised when state validation fails."""
-    
-    def __init__(self, message, state_key=None, expected_type=None):
-        super().__init__(
-            message,
-            error_code="STATE_VALIDATION_ERROR",
-            details={"state_key": state_key, "expected_type": expected_type}
-        )
-
-
-class FileIOException(DR4DNAException):
-    """Raised when file I/O operations fail."""
-    
-    def __init__(self, message, filepath=None, operation=None):
-        super().__init__(
-            message,
-            error_code="FILE_IO_ERROR",
-            details={"filepath": filepath, "operation": operation}
-        )
-
-
-class DataIntegrityException(DR4DNAException):
-    """Raised when data integrity checks fail."""
-    
-    def __init__(self, message, expected=None, actual=None):
-        super().__init__(
-            message,
-            error_code="DATA_INTEGRITY_ERROR",
-            details={"expected": expected, "actual": actual}
-        )
+class StateError(DR4DNAError):
+    """Raised when there's an error with application state."""
+    pass

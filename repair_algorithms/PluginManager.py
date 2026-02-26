@@ -5,6 +5,18 @@ import dash_daq as daq
 
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 
+# Lazy import to avoid circular dependency with state.py
+_state_module = None
+
+
+def _get_state():
+    """Lazy import of state module to avoid circular imports."""
+    global _state_module
+    if _state_module is None:
+        from state import get_app_state as _get_app_state
+        _state_module = _get_app_state
+    return _state_module
+
 
 @singleton
 class PluginManager:
@@ -26,6 +38,10 @@ class PluginManager:
         global input_callback_handler, show_canvas
 
         plugin_inst.on_load()
+        
+        # Get state via lazy import to avoid circular dependency
+        get_app_state = _get_state()
+        state = get_app_state()
 
         # Get the UI elements from the plugin instance:
         ui: typing.Dict[

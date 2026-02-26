@@ -4,16 +4,25 @@ Application State Management for DR4DNA.
 
 This module provides a centralized state management system that eliminates
 the need for global variables and provides thread-safe access to shared state.
+
+Example:
+    >>> from state import get_app_state, initialize_app_state
+    >>> state = get_app_state()
+    >>> if not state.is_initialized():
+    ...     initialize_app_state(solver, checksum_format)
+    >>> solver = state.get_solver()  # Raises SolverNotInitializedError if None
 """
 
 import threading
 import typing
 from dataclasses import dataclass, field
 
-import numpy as np
-
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
 from repair_algorithms.PluginManager import PluginManager
+from exceptions import SolverNotInitializedError, PluginManagerNotInitializedError
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -77,10 +86,11 @@ class AppState:
             The SemiAutomaticReconstructionToolkit instance
             
         Raises:
-            RuntimeError: If the solver has not been initialized
+            SolverNotInitializedError: If the solver has not been initialized
         """
         if self.semi_automatic_solver is None:
-            raise RuntimeError("Application not initialized! Solver is None.")
+            logger.error("Solver accessed before initialization")
+            raise SolverNotInitializedError()
         return self.semi_automatic_solver
     
     def is_initialized(self) -> bool:
@@ -95,16 +105,13 @@ class AppState:
             The PluginManager instance
             
         Raises:
-            RuntimeError: If the plugin manager has not been initialized
+            PluginManagerNotInitializedError: If the plugin manager has not been initialized
         """
         if self.plugin_manager is None:
-            raise RuntimeError("Application not initialized! PluginManager is None.")
+            logger.error("PluginManager accessed before initialization")
+            raise PluginManagerNotInitializedError()
         return self.plugin_manager
 
-    def is_initialized(self) -> bool:
-        """Check if the application state has been initialized."""
-        return self.semi_automatic_solver is not None
-    
     def update_common_packets(self, packets: list):
         """Thread-safe update of common packets."""
         with self._lock:
