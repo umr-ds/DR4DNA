@@ -111,7 +111,7 @@ class RandomShuffleRepair(FileSpecificRepair):
                 "refresh_view": True,
             }
         max_found = 0
-        for packet_diff, corrupt_packet_candidates in self.intersects.items():
+        for _packet_diff, corrupt_packet_candidates in self.intersects.items():
             if len(corrupt_packet_candidates) > max_found:
                 max_found = len(corrupt_packet_candidates)
         if max_found == 1:
@@ -142,7 +142,7 @@ class RandomShuffleRepair(FileSpecificRepair):
         j = 0
         i = offset
         if include_original:
-            res[0] = [x for x in input_order]
+            res[0] = list(input_order)
         while i < num_shuffles + offset:
             tmp = rng.permutation(input_order)
             if not any(np.equal(res, tmp).all(1)):
@@ -158,7 +158,7 @@ class RandomShuffleRepair(FileSpecificRepair):
         unique_diffs = np.zeros(
             (1, self.semi_automatic_solver.decoder.GEPP.b.shape[1]), dtype="uint8"
         )
-        for sol_i, solution in enumerate(self.solutions[1:]):
+        for _sol_i, solution in enumerate(self.solutions[1:]):
             diff: numpy.ndarray = np.array(
                 [
                     helper.xor_numpy(self.solutions[0].b[i], solution.b[i])
@@ -348,8 +348,7 @@ class RandomShuffleRepair(FileSpecificRepair):
         # for each differing chunk, calculate the symmetric difference of the common packets for that chunk
         # for the total of all generated solutions take the intersection of all the symmetric differences.
         # the resulting packet(s) should contain the corrupt packet.
-        correct_incorrect_diff_lst = []
-        possible_packets = [[i for i in range(self.solutions[0].b.shape[0])]]
+        possible_packets = [list(range(self.solutions[0].b.shape[0]))]
         # remove all packets that were not part of the first solution: (since we would not try to repair them...)
         for packet_num, row in enumerate(
             self.semi_automatic_solver.decoder.GEPP.chunk_to_used_packets[
@@ -458,7 +457,7 @@ class RandomShuffleRepair(FileSpecificRepair):
                         res_str += f"{len(value)} possible Packets: {value}\nError delta: {key}\n"
                     info_str = (
                         f" Only partial solutions found, try increasing the number of permutations "
-                        f"or perform multi-file automatic repair : \n{res_str}"
+                        f"or perform multi-file automatic repair: \n{res_str}"
                     )
                     if base is not None:
                         self.intersects[b"base"] = base

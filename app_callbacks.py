@@ -1,18 +1,8 @@
-# noinspection PyUnresolvedReferences
-import traceback
+"""Callback functions for DR4DNA Dash application."""
 
+# noinspection PyUnresolvedReferences
 from dash import ctx
-from dash_extensions.enrich import (
-    ALL,
-    MATCH,
-    DashProxy,
-    Input,
-    MultiplexerTransform,
-    Output,
-    State,
-    dcc,
-    html,
-)
+from dash_extensions.enrich import ALL, MATCH, Input, Output, State, html
 
 # Store for error messages
 _error_store = []
@@ -129,8 +119,6 @@ def callbacks(app):
     )
     def close_error_notification(n_clicks_list, errors):
         """Close error notifications by removing from store."""
-        from app_callbacks import get_error_store
-
         if not n_clicks_list or not any(n_clicks_list):
             return errors
 

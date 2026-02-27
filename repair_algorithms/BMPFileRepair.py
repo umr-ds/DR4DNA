@@ -1,3 +1,5 @@
+"""BMP file repair plugin for DR4DNA."""
+
 import base64
 import io
 import json
@@ -166,15 +168,13 @@ class BmpFileRepair(FileSpecificRepair):
         self.use_header_chunk = use_header
 
     def repair(self, *args, **kwargs):
-        error_cols = sorted(
-            [x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True
-        )
+        error_cols = sorted(list(self.find_incorrect_columns()), key=lambda x: x[2], reverse=True)
         # find the row that that contains the first _no_inspect_chunks_ errors
         repair_row = -1
         diff_lst = []
         # we could iterate only over the chunk_tag values since we know that they are the only one with known errors
         for row_num, row in enumerate(self.error_matrix):
-            for col_no, diff, num, counter in error_cols[: self.num_repair_bytes]:
+            for col_no, diff, _num, _counter in error_cols[: self.num_repair_bytes]:
                 if diff < 1.0:
                     # those are either unknown errors (0.5) or correct columns (0.0) or columns of unknown status (-1.0)
                     break
@@ -278,12 +278,12 @@ class BmpFileRepair(FileSpecificRepair):
         else:
             write_height = self.height
         length = 2 if self.bmp_structure.dib_info.header.is_core_header else 4
-        self.reconstructed_bmp_bytes[width_pos : width_pos + length] = [
-            x for x in self.width.to_bytes(length, byteorder="little")
-        ]
-        self.reconstructed_bmp_bytes[height_pos : height_pos + length] = [
-            x for x in write_height.to_bytes(length, byteorder="little")
-        ]
+        self.reconstructed_bmp_bytes[width_pos : width_pos + length] = list(
+            self.width.to_bytes(length, byteorder="little")
+        )
+        self.reconstructed_bmp_bytes[height_pos : height_pos + length] = list(
+            write_height.to_bytes(length, byteorder="little")
+        )
         self.error_matrix = None  # invalidate error matrix
         return self.find_errors_tags()
 
@@ -528,7 +528,7 @@ def parse_jsonstring(json_string, shape=None, scale=1):
     mask = np.zeros(shape, dtype=np.bool)
     try:
         data = json.loads(json_string)
-    except:
+    except (json.JSONDecodeError, ValueError, TypeError):
         return mask
     scale = 1
     for obj in data["objects"]:

@@ -286,7 +286,7 @@ class PluginCallbackHandler:
         result = "Saved to file(s): ["
         generate_all = res_value.get("generate_all", False)
         variations = res_value["variations"]
-        tmp = []
+        tmp: typing.List[typing.Any] = []
 
         for i, packet_to_repair in enumerate(state.common_packets):
             if packet_to_repair:
@@ -322,10 +322,10 @@ class PluginCallbackHandler:
         generate_all = res_value.get("generate_all", False)
         correctness_function = res_value.get("correctness_function", None)
         repair_list = res_value["repair_list"]
-        tmp = []
+        tmp: typing.List[typing.Any] = []
 
         for possible_packet_ids, invalid_row, repaired_content_row in repair_list:
-            for i, packet_to_repair in enumerate(possible_packet_ids):
+            for _i, packet_to_repair in enumerate(possible_packet_ids):
                 tmp.append(
                     solver.repair_and_store_by_packet(
                         invalid_row,

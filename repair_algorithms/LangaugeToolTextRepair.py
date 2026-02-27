@@ -1,3 +1,5 @@
+"""LanguageTool-based text file repair plugin for DR4DNA."""
+
 import asyncio
 import functools
 import itertools
@@ -36,17 +38,42 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         self.no_columns_to_repair = None
 
     def set_use_header(self, use_header):
+        """
+        Set whether to use header chunk.
+
+        Args:
+            use_header: Boolean indicating if header chunk should be used
+        """
         self.use_header_chunk = use_header
 
     def set_no_inspect_chunks(self, *args, **kwargs):
+        """
+        Set the number of chunks to inspect from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with updates_b and refresh_view flags
+        """
         try:
             self.no_inspect_chunks = int(kwargs["c_ctx"].triggered[0]["value"])
-        except:
+        except (ValueError, TypeError, IndexError):
             print("Error: could not set number of chunks to inspect")
         return {"updates_b": False, "refresh_view": False}
 
     @staticmethod
     def filter_nonprintable(text):
+        """
+        Remove non-printable characters from text.
+
+        Args:
+            text: Input text string
+
+        Returns:
+            Text with non-printable characters removed
+        """
         import itertools
 
         # Use characters of control category
@@ -55,6 +82,16 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         return text.translate({character: None for character in nonprintable})
 
     def detect_language(self, *args, **kwargs):
+        """
+        Detect the language of the text content in the file.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with detected language info message
+        """
         translator = Translator()
         start_pos = 1 if self.use_header_chunk else 0
         text = self.filter_nonprintable(
@@ -72,11 +109,39 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         # ( https://github.com/chenterry85/Language-Detection )
 
     def find_error_region(self, language=None, *args, **kwargs):
+        """
+        Find error region using default method (by words).
+
+        Args:
+            language: Language code (default: self.lang)
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Result from find_error_region_by_words
+        """
         if language is None:
             language = self.lang
         return self.find_error_region_by_words(language, *args, **kwargs)
 
     def find_error_region_by_words(self, language=None, *args, **kwargs):
+        """
+        Find error region by analyzing incorrect words using language tool.
+
+        Uses a language dictionary to find incorrect words per chunk and
+        identifies the most likely position of errors across multiple chunks.
+
+        Args:
+            language: Language code (default: self.lang)
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with chunk_tag and column_tag updates
+
+        Raises:
+            ValueError: If no language is selected
+        """
         if language is None:
             language = self.lang
         if language is None:
@@ -157,7 +222,7 @@ class LangaugeToolTextRepair(FileSpecificRepair):
                         pos_correct[offset : offset + error_length] = np.array(
                             [(ord(a) ^ ord(b)) for a, b in zip(token, correction)]
                         )
-                    except:
+                    except (ValueError, TypeError):
                         print(f"Error while processing {matching_rule}")
             elif matching_rule.category == "EN_UNPAIRED_BRACKETS":
                 pos_correct[offset : offset + error_length] = 0.5
@@ -187,25 +252,23 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         return pos_correct
 
     def find_incorrect_rows(self, *args, **kwargs):
+        """
+        Find rows with errors based on error matrix analysis.
+
+        Identifies chunks that contain errors and marks them as invalid.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing chunk_tag
+
+        Returns:
+            Dictionary with chunk_tag, column_tag updates and refresh flags
+        """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
         else:
             self.chunk_tag = kwargs.get("chunk_tag")
-        """
-        max_count, max_col = 0, 0
-        max_counter = None
-        for i, counter in enumerate(counters):
-            most_non_zero_column = np.argmin([x.get(0.0) for x in self.get_column_counter()])
-            for diff, count in counter.most_common(4):  # 0.0, 0.1, 0.5 and the most common real error...
-                if diff < 1.0:
-                    continue
-                else:
-                    if count > max_count:
-                        max_col = i
-                        max_count = count
-                        max_counter = counter
-        """
-        incorrect_columns = [x for x in self.find_incorrect_columns()]
+        incorrect_columns = list(self.find_incorrect_columns())
         tmp = sorted(incorrect_columns, key=lambda x: x[2], reverse=True)
         column_tags = [x[2] for x in incorrect_columns]
         for i in range(len(self.error_matrix)):
@@ -219,6 +282,18 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         }
 
     def find_correct_rows(self, *args, **kwargs):
+        """
+        Find rows without errors according to spellchecker.
+
+        Marks all rows with no detected errors as valid (tag=2).
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing chunk_tag
+
+        Returns:
+            Dictionary with updated chunk_tag and refresh flags
+        """
         # all rows with no errors according to the spellchecker are treated as correct!
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
@@ -237,6 +312,18 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         return {"chunk_tag": self.chunk_tag, "updates_b": False, "refresh_view": True}
 
     def find_incorrect_columns(self, *args, **kwargs):
+        """
+        Find columns with errors using column counter analysis.
+
+        Yields columns that have error values greater than 0.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Yields:
+            Tuples of (column_index, error_diff, count, counter) for columns with errors
+        """
         column_counters = self.get_column_counter()
         for i, counter in enumerate(column_counters):
             exists_gr_zero = False
@@ -251,11 +338,34 @@ class LangaugeToolTextRepair(FileSpecificRepair):
                 yield i, 0.0, 0, counter
 
     def get_incorrect_columns(self, *args, **kwargs):
+        """
+        Get column tags based on incorrect column analysis.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with column_tag updates and refresh flags
+        """
         incorrect_columns = self.find_incorrect_columns()
         column_tags = [x[2] for x in incorrect_columns]
         return {"column_tag": column_tags, "updates_b": False, "refresh_view": True}
 
     def get_column_counter(self, *args, **kwargs):
+        """
+        Get column error counters for analysis.
+
+        Computes error matrix if not already computed, then creates
+        counters for error values in each column.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            List of Counter objects for each column's error values
+        """
         if self.error_matrix is None or self.analyzed_row != self.no_inspect_chunks:
             self.error_matrix = self.find_error_region(*args, **kwargs)
             self.analyzed_row = self.no_inspect_chunks
@@ -276,7 +386,7 @@ class LangaugeToolTextRepair(FileSpecificRepair):
             self.find_error_region(*args, **kwargs)
             self.find_incorrect_rows()
         # np.bitwise_xor(self.gepp.b[i,j], most_common_difference[i])
-        tmp = [x for x in self.find_incorrect_columns()]
+        tmp = list(self.find_incorrect_columns())
         if self.no_columns_to_repair is None or self.no_columns_to_repair == 0:
             incorrect_columns = sorted(tmp, key=lambda x: x[2], reverse=True)
         else:
@@ -297,10 +407,25 @@ class LangaugeToolTextRepair(FileSpecificRepair):
                 }
 
     def is_compatible(self, meta_info):
+        """
+        Check if plugin is compatible with file type.
+
+        Args:
+            meta_info: File type metadata string
+
+        Returns:
+            True if file is data or Unicode text, False otherwise
+        """
         # parse magic info string:
         return meta_info == "data" or "Unicode text" in meta_info
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the plugin.
+
+        Returns:
+            Dictionary of UI element configurations for language tool repair
+        """
         return {
             "btn-textfile-lt-detect-language": {
                 "type": "button",
@@ -344,17 +469,39 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         }
 
     def set_no_columns_to_repair(self, *args, **kwargs):
+        """
+        Set the number of columns to repair from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with updates_b and refresh_view flags
+        """
         try:
             self.no_columns_to_repair = int(kwargs["c_ctx"].triggered[0]["value"])
-        except:
+        except (ValueError, TypeError, IndexError):
             print("Error: could not set number of columns to repair")
         return {"updates_b": False, "refresh_view": False}
 
     def update_chunk_tag(self, chunk_tag):
+        """
+        Update chunk tags and invalidate cached error matrix.
+
+        Args:
+            chunk_tag: New chunk tag list
+        """
         super().update_chunk_tag(chunk_tag)
         self.error_matrix = None  # this could be speed-up?!
 
     def update_gepp(self, gepp):
+        """
+        Update GEPP matrix and invalidate cached error matrix.
+
+        Args:
+            gepp: New GEPP instance
+        """
         # invalidate error matrix:
         self.error_matrix = None
         self.gepp = gepp  # Use the passed gepp parameter

@@ -54,11 +54,11 @@ from constants import (
 from layout import gen_app_layout
 from logger import get_logger
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
-from repair_algorithms import *  # NOSONAR
+from repair_algorithms import *  # NOSONAR - Required to load/register all plugins  # noqa: F403, F401
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
-from repair_algorithms.PluginManager import PluginManager
+from repair_algorithms.PluginManager import PluginManager  # noqa: F401 - Used implicitly
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
-from state import AppState, get_app_state, initialize_app_state
+from state import AppState, get_app_state, initialize_app_state  # noqa: F401 - Used implicitly
 
 logger = get_logger(__name__)
 
@@ -205,32 +205,55 @@ def init_globals(solver):
 
 
 def get_column_tag():
+    """Get current column tags from application state."""
     return get_app_state().get_column_tag()
 
 
 def update_column_tag(tag):
+    """
+    Update column tags in application state.
+
+    Args:
+        tag: List of column tag values
+    """
     get_app_state().update_column_tag(tag)
 
 
 def reset_column_tag():
+    """Reset all column tags to zero."""
     update_column_tag([0 for _ in range(len(get_column_tag()))])
 
 
 def get_chunk_tag():
+    """Get current chunk tags from application state."""
     return get_app_state().get_chunk_tag()
 
 
 def update_chunk_tag(tag):
+    """
+    Update chunk tags in application state.
+
+    Args:
+        tag: List of chunk tag values
+    """
     get_app_state().update_chunk_tag(tag)
 
 
 def update_single_element_chunk_tag(key, value):
+    """
+    Update a single chunk tag element.
+
+    Args:
+        key: Index of chunk to update
+        value: New tag value for the chunk
+    """
     tag = get_chunk_tag()
     tag[key] = value
     update_chunk_tag(tag)
 
 
 def reset_chunk_tag():
+    """Reset all chunk tags to zero."""
     update_chunk_tag([0 for _ in range(len(get_chunk_tag()))])
 
 
@@ -240,6 +263,15 @@ def reset_chunk_tag():
     prevent_initial_call=True,
 )
 def download_data(n_clicks):
+    """
+    Handle plugin data download request.
+
+    Args:
+        n_clicks: Number of button clicks (trigger)
+
+    Returns:
+        Dash download component with plugin data bytes
+    """
     state = get_app_state()
     plugin_manager = state.get_plugin_manager()
 
@@ -269,6 +301,16 @@ def download_data(n_clicks):
 
 
 def create_notification(text, color):
+    """
+    Create a notification UI element.
+
+    Args:
+        text: Notification message text
+        color: Color style for the notification
+
+    Returns:
+        HTML div component with notification styling
+    """
     return html.Div(
         [
             html.Button(id="close-notify-btn", className="delete"),
@@ -279,6 +321,15 @@ def create_notification(text, color):
 
 
 def calculate_column_correctness_view():
+    """
+    Generate column correctness visualization view.
+
+    Creates colored div elements for each column based on correctness values.
+    Uses red color intensity to indicate correctness level.
+
+    Returns:
+        HTML div containing column indicators
+    """
     tag = get_column_tag()
     res = []
     multiplicator = 5 if 1.0 * max(tag) > 5 * np.mean(tag) else 1
@@ -352,6 +403,16 @@ def propagate_gepp_update():
 
 
 def repair_chunks(repair_id, hex_value):
+    """
+    Repair a specific chunk with provided hex data.
+
+    Args:
+        repair_id: ID of chunk to repair
+        hex_value: Hex string data to use for repair
+
+    Returns:
+        Tuple of (notification, canvas_update, recalculate_view_result)
+    """
     state = get_app_state()
     solver = state.get_solver()
 
@@ -416,7 +477,83 @@ def change_button_style(n_clicks: int, n_clicks2: int) -> typing.Dict:
         return BUTTON_STYLE_WHITE
 
 
+def _bytes_to_text_display(data):
+    """Convert bytes to text display string (printable chars or '.')."""
+    return "".join([chr(_i) if 32 <= _i <= 127 else "." for _i in data])
+
+
+def _bytes_to_hex_display(data):
+    """Convert bytes to hex display string with spaces."""
+    return " ".join([f"{_i:02x}" for _i in data])
+
+
+def _sync_hex_txt_inputs(hex_value, txt_value):
+    """
+    Synchronize hex and text input values.
+
+    Args:
+        hex_value: Current hex string value
+        txt_value: Current text string value
+
+    Returns:
+        Tuple of (synced_hex, synced_txt)
+    """
+    hex_vals = hex_value.split(" ")
+    if len(txt_value) == len(hex_vals):
+        # Sync text changes to hex
+        for _i, val in enumerate(txt_value):
+            # Skip if non-printable in hex and '.' in txt
+            if not (32 <= int(hex_vals[_i], 16) <= 127) and val == ".":
+                logger.warning(
+                    "Non-printable character in hex-view and '.' in txt-view. Skipping..."
+                )
+            else:
+                hex_vals[_i] = f"{ord(val):02x}"
+        return " ".join(hex_vals), txt_value
+    return hex_value, txt_value
+
+
+def _get_repair_display_values(trigger_id, id_value, hex_value, txt_value, solver):
+    """
+    Get display values for repair inputs based on trigger.
+
+    Args:
+        trigger_id: ID of triggered element
+        id_value: Chunk ID
+        hex_value: Hex string value
+        txt_value: Text string value
+        solver: Solver instance
+
+    Returns:
+        Tuple of (hex_display, txt_display)
+    """
+    if trigger_id == "repair-button":
+        res = solver.decoder.GEPP.b[id_value]
+        return _bytes_to_hex_display(res), _bytes_to_text_display(res)
+    elif trigger_id == "hex-repair-input":
+        res_bytes = bytes.fromhex(hex_value)
+        return hex_value, _bytes_to_text_display(res_bytes)
+    elif trigger_id == "txt-repair-input":
+        return _sync_hex_txt_inputs(hex_value, txt_value)
+    return "", ""
+
+
 def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
+    """
+    Handle repair input callbacks for hex and text repair fields.
+
+    Synchronizes hex and text repair inputs, validating and converting between formats.
+
+    Args:
+        trigger_id: ID of the element that triggered the callback
+        input_value: Current input value
+        id_value: Chunk ID to repair
+        hex_value: Hex string representation of data
+        txt_value: Text string representation of data
+
+    Returns:
+        Tuple of (notification, hidden_flag, disabled_flag, hex_value, hex_style, txt_value, txt_style)
+    """
     state = get_app_state()
     solver = state.get_solver()
 
@@ -424,8 +561,8 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
         hex_value = ""
     if txt_value is None:
         txt_value = ""
-    # in this case, all we have to do is propagate to all packets that are still reachable from chunk "id_value"
-    # and then recalculate the view
+
+    # Check if repair is allowed
     if trigger_id == "repair-button" and (
         id_value is None
         or get_chunk_tag()[id_value] == 2
@@ -443,51 +580,15 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
             "",
             {},
         )
-    # set width to fit content:
 
-    # make sure only HEX and space in hex_value
+    # Validate and get display values
     if all(c in string.hexdigits + " " for c in "" + hex_value):
-        if trigger_id == "repair-button":
-            # fill in hex-repair-input and txt-repair-input
-            res = solver.decoder.GEPP.b[id_value]
-            res_str = "".join([chr(_i) if 32 <= _i <= 127 else "." for _i in res])
-            res_hex = " ".join([f"{_i:02x}" for _i in res])
-        elif trigger_id == "hex-repair-input":
-            # fill in txt-repair-input
-            # convert hex to bytes and from bytes to string:
-            res_bytes = bytes.fromhex(hex_value)
-            res_hex = hex_value  # keep current value...
-            res_str = "".join([chr(_i) if 32 <= _i <= 127 else "." for _i in res_bytes])
-        elif trigger_id == "txt-repair-input":
-            # fill in hex-repair-input
-            # if len(hex) !=  len(txt), wait until both are equal again
-            hex_vals = hex_value.split(" ")
-            if len(txt_value) == len(hex_vals):
-                # care!: we should ONLY change bytes in hex-view if the corresponding byte in txt-view is changed (is a printable character!)
-                # problem: we use "." for non-printable chars in txt-view. Thus, we have to check
-                # if the corresponding byte in hex-view is a printable "." or if the byte is a non-printable byte
-                # iterate over all charaters in
-                for _i, val in enumerate(txt_value):
-                    # PROBLEM: if the user intentionally changes a byte to "." from a non-printable character,
-                    # we do not propagate this change...
-                    # if we have a non-printable character in hex-view and "." in txt view, skip it...
-                    if not (32 <= int(hex_vals[_i], 16) <= 127) and val == ".":
-                        logger.warning(
-                            "Non-printable character in hex-view and '.' in txt-view. Skipping..."
-                        )
-                    else:
-                        hex_vals[_i] = f"{ord(val):02x}"
-                res_hex = " ".join(hex_vals)
-                res_str = txt_value
-            else:
-                res_hex = hex_value
-                res_str = txt_value
-        else:
-            res_hex = ""
-            res_str = ""
+        res_hex, res_str = _get_repair_display_values(
+            trigger_id, id_value, hex_value, txt_value, solver
+        )
     else:
-        res_hex = ""
-        res_str = ""
+        res_hex, res_str = "", ""
+
     hex_style = {"width": f"{len(res_hex) * 10}px"}
     str_style = {"width": f"{len(res_str) * 10}px"}
     return (
@@ -509,6 +610,15 @@ def repair_callback(trigger_id, input_value, id_value, hex_value, txt_value):
     prevent_initial_call=True,
 )
 def update_analytics(n):
+    """
+    Update analytics display on interval.
+
+    Args:
+        n: Interval count (unused, just for triggering)
+
+    Returns:
+        File type prediction HTML or no_update
+    """
     state = get_app_state()
     if state.is_content_updated():
         state.reset_content_updated()
@@ -526,6 +636,15 @@ def update_analytics(n):
     prevent_initial_call=True,
 )
 def update_canvas_data(json_data):
+    """
+    Handle canvas data updates from plugins.
+
+    Args:
+        json_data: Canvas JSON data from Dash canvas component
+
+    Returns:
+        Tuple of recalculate_view results and new JSON data
+    """
     state = get_app_state()
     plugin_manager = state.get_plugin_manager()
 
@@ -654,6 +773,21 @@ def callback_handler(*args, **kwargs):
 
 
 def fast_most_common_matrix(matrices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Find the most common value at each position across multiple matrices.
+
+    Takes a 3D array of matrices and returns the matrix of the most common value
+    at each position (i,j), along with a boolean matrix indicating positions
+    where only a single unique value exists.
+
+    Args:
+        matrices: 3D numpy array of matrices with shape (num_matrices, rows, columns)
+
+    Returns:
+        Tuple of (output_matrix, has_single_val) where:
+            - output_matrix: Matrix of most common values at each position
+            - has_single_val: Boolean matrix indicating positions with single unique value
+    """
     # takes a 3d array of matrices and returns the matrix of the most common value of each position (i,j,_)
     # get the dimensions of the first matrix in the list
     num_rows = matrices.shape[0]
@@ -674,6 +808,15 @@ def fast_most_common_matrix(matrices: np.ndarray) -> tuple[np.ndarray, np.ndarra
 
 
 def recalculate_view():
+    """
+    Recalculate and regenerate the file view based on current state.
+
+    Analyzes chunk tags, identifies invalid/valid rows, calculates common packets,
+    and generates the HTML view with appropriate styling for each row.
+
+    Returns:
+        Tuple containing view components and state information for Dash callback
+    """
     state = get_app_state()
     solver = state.get_solver()
 
@@ -690,7 +833,7 @@ def recalculate_view():
     ]
     unused_packet_ids = [_i for _i, j in enumerate(not_used_packets) if j]
     logger.info(f"The following packets were not used for the reconstruction: {unused_packet_ids}")
-    common_packets_str = " ".join(map(lambda x: "1" if x else "0", state.common_packets))
+    common_packets_str = " ".join("1" if x else "0" for x in state.common_packets)
     logger.info(f"Potentially invalid packets: {common_packets_str}")
     rem_possible_chunks = solver.get_possible_invalid_chunks_from_common_packets(
         state.common_packets

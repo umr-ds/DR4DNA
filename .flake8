@@ -1,0 +1,13 @@
+[flake8]
+max-line-length = 127
+max-complexity = 10
+extend-ignore =
+    E203,  # whitespace before ':' (conflicts with black)
+    W503,  # line break before binary operator (conflicts with black)
+exclude =
+    .git,
+    __pycache__,
+    build,
+    dist,
+    NOREC4DNA,
+    .venv,

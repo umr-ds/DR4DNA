@@ -1,17 +1,10 @@
 import base64
-import io
 import itertools
-import json
-import math
 import typing
 from collections import Counter
 
 import numpy as np
-from kaitaistruct import ValidationFailedError
-from PIL import Image
 
-import Kaitai2Html
-from repair_algorithms.bmp import Bmp
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 from repair_algorithms.PluginManager import PluginManager
 
@@ -33,7 +26,6 @@ class UploadRepair(FileSpecificRepair):
 
     def load(self):
         start = 1 if self.use_header_chunk else 0
-        start_offset = start * self.semi_automatic_solver.decoder.GEPP.b.shape[1]
         self.semi_automatic_solver.parse_header("I")
         if self.semi_automatic_solver.headerChunk is not None:
             last_chunk_garbage = (
@@ -65,15 +57,13 @@ class UploadRepair(FileSpecificRepair):
         # user has to tag error regions
         # and a single position (maybe multiple pixel within a chunk) with the corrected color.
         # sort the columns by the number of entries with the same value (use only the rows from the corrupt packet)::
-        error_cols = sorted(
-            [x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True
-        )
+        error_cols = sorted(list(self.find_incorrect_columns()), key=lambda x: x[2], reverse=True)
         # find the row that that contains the first _no_inspect_chunks_ errors
         repair_row = -1
         diff_lst = []
         # we could iterate only over the chunk_tag values since we know that they are the only one with known errors
         for row_num, row in enumerate(self.error_matrix):
-            for col_no, diff, num, counter in error_cols[: self.num_repair_bytes]:
+            for col_no, diff, _num, _counter in error_cols[: self.num_repair_bytes]:
                 if diff < 1.0:
                     # those are either unknown errors (0.5) or correct columns (0.0) or columns of unknown status (-1.0)
                     break
@@ -108,7 +98,7 @@ class UploadRepair(FileSpecificRepair):
         # then return this mapping to the caller
         row_to_repaired_content: typing.Dict[int, bytes] = {}
         # we could iterate only over the chunk_tag values since we know that they are the only one with known errors
-        # error_cols = sorted([x for x in self.find_incorrect_columns()], key=lambda x: x[2], reverse=True)
+        # error_cols = sorted(list(self.find_incorrect_columns()), key=lambda x: x[2], reverse=True)
         for row_num, row in enumerate(self.error_matrix):
             if sum(row) != 0:
                 # there was a modification in this row, we should add the row + the changed content to our result.

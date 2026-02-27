@@ -9,19 +9,11 @@ import io
 import lzma
 import re
 import struct
-import traceback
 import typing
 import zlib
-from typing import Union
 
-import norec4dna.GEPP
 import numpy as np
-from kaitaistruct import (
-    KaitaiStream,
-    ValidationFailedError,
-    ValidationNotAnyOfError,
-    ValidationNotEqualError,
-)
+from kaitaistruct import KaitaiStream, ValidationFailedError
 
 import Kaitai2Html
 from CustomExceptions import CustomOutOfBoundsException, InvalidDataException
@@ -80,7 +72,7 @@ class ZipFileRepair(FileSpecificRepair):
                     self.reconstructed_zip_bytes = bytearray(copy.copy(zip_bytes))
                 return res, error_pos  # np.array(error_pos).reshape(-1, self.gepp.b.shape[1])
             except ValidationFailedError as err:
-                tb = traceback.format_exc()
+                #                 tb = traceback.format_exc()
                 # if magic bytes are wrong:
                 if err.src_path == "/types/pk_section/seq/0":
                     # replace magic bytes with correct ones:
@@ -101,7 +93,7 @@ class ZipFileRepair(FileSpecificRepair):
                     for expected in [513, 1027, 1541, 2055]:
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
                     expected = struct.pack(
-                        "<H", sorted([(x) for x in distance.items()], key=lambda x: x[1])[0][0]
+                        "<H", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
                     )
                     # replace src bytes with correct ones:
                     zip_bytes = (
@@ -149,7 +141,7 @@ class ZipFileRepair(FileSpecificRepair):
                     for expected in range(1, 13, 1):
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
                     expected = struct.pack(
-                        "<B", sorted([(x) for x in distance.items()], key=lambda x: x[1])[0][0]
+                        "<B", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
                     )
                     # replace src bytes with correct ones:
                     zip_bytes = (
@@ -169,10 +161,10 @@ class ZipFileRepair(FileSpecificRepair):
                 else:
                     raise err
             except CustomOutOfBoundsException as err:
-                tb = traceback.format_exc()
+                #                 tb = traceback.format_exc()
                 raise err
             except InvalidDataException as err:
-                tb = traceback.format_exc()
+                #                 tb = traceback.format_exc()
                 if err.args[0] in [
                     "/types/filename/invalid",
                     "/types/comment/invalid",
@@ -196,7 +188,6 @@ class ZipFileRepair(FileSpecificRepair):
                 else:
                     raise err
             except Exception as err:
-                tb = traceback.format_exc()
                 raise err
         return self.sweep_zip_header()
 
@@ -338,7 +329,7 @@ class ZipFileRepair(FileSpecificRepair):
                     data = section.body.body
                 else:
                     try:
-                        comp = Zip.Compression(section.body.header.compression_method)
+                        Zip.Compression(section.body.header.compression_method)
                         raise NotImplementedError(
                             "Only deflate, lzma and no compression are currently supported"
                         )
@@ -1264,7 +1255,7 @@ class ZipFileRepair(FileSpecificRepair):
                     for expected in [513, 1027, 1541, 2055]:
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
                     expected = struct.pack(
-                        "<H", sorted([(x) for x in distance.items()], key=lambda x: x[1])[0][0]
+                        "<H", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
                     )
                     # replace src bytes with correct ones:
                     zip_bytes = (
@@ -1319,7 +1310,7 @@ class ZipFileRepair(FileSpecificRepair):
                     for expected in range(1, 13, 1):
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
                     expected = struct.pack(
-                        "<B", sorted([(x) for x in distance.items()], key=lambda x: x[1])[0][0]
+                        "<B", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
                     )
                     # replace src bytes with correct ones:
                     zip_bytes = (
@@ -1377,7 +1368,7 @@ class ZipFileRepair(FileSpecificRepair):
                             pass
                 else:
                     raise err
-            except Exception as err:
+            except Exception as _err:  # noqa: F841
                 iterations += 1
                 return None, bkp_error_pos
         error_pos = bkp_error_pos

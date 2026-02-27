@@ -558,7 +558,7 @@ class Bmp(KaitaiStruct):
 
         def _read(self):
             self.colors = []
-            for i in range(
+            for _i in range(
                 (
                     self.num_colors
                     if ((self.num_colors > 0) and (self.num_colors < self.num_colors_present))

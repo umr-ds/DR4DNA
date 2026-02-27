@@ -1,12 +1,12 @@
-import matplotlib.pyplot as plt
-import pandas as pd
-import seaborn as sns
-from matplotlib.lines import Line2D
-
 """
 Plot the required overhead vs the non-critical packets using multiple csv-files as input (merged)
 It uses the output of "norec_analysis.py" as the input!
 """
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from matplotlib.lines import Line2D
 
 df = pd.read_csv("exp_13_04_2023_10_07_00.csv")
 df2 = pd.read_csv("exp_12_04_2023_13_41_52.csv")
@@ -26,6 +26,7 @@ df = pd.concat([df, df5], ignore_index=True, sort=False)
 
 
 def limit_rows(gr):
+    """Limit group to first 100 rows."""
     return gr.head(100)
 
 
@@ -41,7 +42,7 @@ ax = sns.violinplot(x="num_rows", y="num_success", data=df, cut=0, scale="count"
 df["num_rows"] += df["num_chunks"][0]
 # add a horizontal line at the maximum value for each num_rows group
 min_num_rows = df["num_rows"].min()
-for i, (num_rows, group_data) in enumerate(df.groupby("num_rows")):
+for i, (_num_rows, group_data) in enumerate(df.groupby("num_rows")):
     max_value = max(group_data["num_rows"].max(), 0)
     group_violin = ax.collections[i]
     group_center = ax.get_xticks()[i]

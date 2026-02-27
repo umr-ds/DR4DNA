@@ -1,18 +1,17 @@
-import logging
+"""Convert Kaitai Struct objects to HTML tree representation."""
+
 import types
 from enum import Enum, EnumMeta
 
 from dash_extensions.enrich import html
 from kaitaistruct import KaitaiStruct, ValidationNotEqualError
 
-seen_set = set()
+seen_set: set = set()
 
 
 def kaitai2html(kaitai_struct, tree=None, chunk_length=None, chunk_offset=0):
-    if tree is None:
-        seen_set.clear()
-        tree = ""
-    html_str = html.Label("No entries found")
+    """Convert a Kaitai Struct object to an HTML tree representation."""
+    seen_set: set = set()
     # iterate over all attributes of the kaitai_struct
     top_level_entries = []
     for attr in dir(kaitai_struct):

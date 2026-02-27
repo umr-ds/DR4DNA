@@ -38,6 +38,7 @@ class CallbackDispatcher:
     """
 
     def __init__(self):
+        """Initialize CallbackDispatcher with empty route list."""
         self._routes: typing.List[CallbackRoute] = []
 
     def register_route(self, route: CallbackRoute) -> None:

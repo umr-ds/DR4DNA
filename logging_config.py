@@ -11,7 +11,6 @@ This module provides centralized logging setup with support for:
 
 import logging
 import logging.handlers
-import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -46,10 +45,23 @@ class LogFormatter(logging.Formatter):
     RESET = "\033[0m"
 
     def __init__(self, fmt=None, datefmt=None, use_color=True):
+        """Initialize ColoredFormatter with optional color support."""
         super().__init__(fmt, datefmt)
         self.use_color = use_color and sys.stdout.isatty()
 
     def format(self, record):
+        """
+        Format a log record with optional color coding.
+
+        Adds ANSI color codes to the levelname if color is enabled and
+        the record level has a color mapping.
+
+        Args:
+            record: Log record to format
+
+        Returns:
+            Formatted log string with optional color codes
+        """
         # Add color to levelname
         if self.use_color and record.levelname in self.COLORS:
             record.levelname = f"{self.COLORS[record.levelname]}{record.levelname}{self.RESET}"
@@ -132,7 +144,7 @@ def setup_logging(
             error_handler.setFormatter(formatter)
             logger.addHandler(error_handler)
 
-        except (PermissionError, OSError) as e:
+        except OSError as e:
             # If we can't write to log file, just log to console
             logger.warning(f"Could not create log file at {log_file}: {e}")
 

@@ -6,12 +6,11 @@ This service encapsulates all repair-related operations and provides
 a clean API for the UI layer.
 """
 
-import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from exceptions import DataIntegrityException, RepairException, RepairValidationError
+from exceptions import RepairException, RepairValidationError
 from logging_config import get_logger
 from services.decoder_service import DecoderService
 from state import AppState

@@ -6,18 +6,12 @@ This service manages plugin lifecycle, loading, and execution.
 """
 
 import importlib
-import logging
 import traceback
-from abc import ABC, abstractmethod
+import typing
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
-from exceptions import (
-    PluginCompatibilityError,
-    PluginException,
-    PluginExecutionError,
-    PluginLoadError,
-)
+from exceptions import PluginExecutionError
 from logging_config import get_logger
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 from state import AppState
@@ -92,7 +86,7 @@ class PluginService:
         Returns:
             List of plugin class names
         """
-        plugin_names = []
+        plugin_names: typing.List[str] = []
 
         try:
             if not self.plugin_dir.exists():

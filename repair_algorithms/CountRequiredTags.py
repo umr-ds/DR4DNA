@@ -1,11 +1,3 @@
-import csv
-import json
-
-import numpy as np
-
-from repair_algorithms.FileSpecificRepair import FileSpecificRepair
-from repair_algorithms.PluginManager import PluginManager
-
 """
 Using the currently loaded file, this plugin analyzes the required tags (valid and invalid) for a given packet and
 stores the results in a json file.
@@ -18,13 +10,29 @@ The separation of json and csv files was done to allow for easier and faster ana
 preventing loss of raw data.
 """
 
+import csv
+import json
+import typing
+
+import numpy as np
+
+from repair_algorithms.FileSpecificRepair import FileSpecificRepair
+from repair_algorithms.PluginManager import PluginManager
+
 
 def bool_array_to_index(arr):
-    """returns a list of indices where arr is True"""
+    """Return a list of indices where arr is True."""
     return [i for i, x in enumerate(arr) if x]
 
 
 class CountRequiredTags(FileSpecificRepair):
+    """
+    Plugin to analyze required tags (valid and invalid) for packets.
+
+    Analyzes the currently loaded file and stores results in a JSON file.
+    Can produce CSV output for visualization in CountRequiredAnalysis.py.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.inspect_packet_num = 0
@@ -32,26 +40,67 @@ class CountRequiredTags(FileSpecificRepair):
         self.no_inspect_packets = self.gepp.b.shape[0]
 
     def set_use_header(self, use_header):
+        """
+        Set whether to use header chunk.
+
+        Args:
+            use_header: Boolean indicating if header chunk should be used
+        """
         self.use_header_chunk = use_header
 
     def set_no_inspect_packet(self, *args, **kwargs):
+        """
+        Set the number of packets to inspect from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with updates_b and refresh_view flags
+        """
         try:
             self.inspect_packet_num = int(kwargs["c_ctx"].triggered[0]["value"])
-        except:
+        except (ValueError, TypeError, IndexError):
             print("Error: could not set number of packets to inspect")
         return {"updates_b": False, "refresh_view": False}
 
     def set_no_permutations(self, *args, **kwargs):
+        """
+        Set the number of permutations to try from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with updates_b and refresh_view flags
+        """
         try:
             self.no_permutations = int(kwargs["c_ctx"].triggered[0]["value"])
-        except:
+        except (ValueError, TypeError, IndexError):
             print("Error: could not set number of permutations to perform")
         return {"updates_b": False, "refresh_view": False}
 
     def is_compatible(self, meta_info):
+        """
+        Check if plugin is compatible with file type.
+
+        Args:
+            meta_info: File type metadata
+
+        Returns:
+            False (this plugin is not file-type specific)
+        """
         return False
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the plugin.
+
+        Returns:
+            Dictionary of UI element configurations
+        """
         return {
             "txt-packet-num": {
                 "type": "int",
@@ -82,6 +131,21 @@ class CountRequiredTags(FileSpecificRepair):
         }
 
     def analyze_selected_packet(self, inspect_num=None, *args, **kwargs):
+        """
+        Analyze required tags for a selected packet.
+
+        Tests combinations of valid and invalid row tags to determine
+        how many corrupt packets are identified for each combination.
+
+        Args:
+            inspect_num: Packet number to inspect (default: self.inspect_packet_num)
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary mapping (valid_count, invalid_count) tuples to lists of
+            corrupt packet indices found for each combination
+        """
         if inspect_num is None:
             inspect_num = self.inspect_packet_num
         invalid = self.semi_automatic_solver.get_corrupt_chunks_by_packets(
@@ -90,7 +154,7 @@ class CountRequiredTags(FileSpecificRepair):
         # calculate valid rows:
         valid = bool_array_to_index(invalid * -1 + 1)
         invalid = bool_array_to_index(invalid)
-        res = {}
+        res: typing.Dict[str, typing.Any] = {}
         for v in np.arange(0, 20):
             for i in np.arange(0, 20):
                 if v == 0 and i == 0:
@@ -113,7 +177,19 @@ class CountRequiredTags(FileSpecificRepair):
         return res
 
     def analyze_all_packets(self, *args, **kwargs):
-        res = {}
+        """
+        Analyze required tags for all packets.
+
+        Runs analyze_selected_packet for each packet and saves results.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary mapping packet numbers to analysis results
+        """
+        res: typing.Dict[str, typing.Any] = {}
         for i in np.arange(0, self.semi_automatic_solver.decoder.number_of_chunks):
             res[int(i)] = self.analyze_selected_packet(int(i), as_json=False)
         with open(f"count_all.json", "w") as fp:
@@ -127,7 +203,7 @@ mgr.register_plugin(CountRequiredTags)
 if __name__ == "__main__":
     with open("../count_all.json", "r") as fp:
         js = json.load(fp)
-    res = {}
+    res: typing.Dict[str, typing.Any] = {}
     for chosen_packet in js.keys():
         res[chosen_packet] = {}
         for tpl in js[chosen_packet].keys():

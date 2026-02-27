@@ -13,9 +13,9 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from exceptions import ConfigurationException
+from exceptions import ConfigurationError
 
 
 class LogLevel(Enum):
@@ -97,6 +97,17 @@ class AppConfig:
     enable_analytics: bool = False
     enable_error_reporting: bool = True
 
+    @staticmethod
+    def _set_nested_attr(config_section, key, value):
+        """Safely set attribute on config section if it exists."""
+        if hasattr(config_section, key):
+            setattr(config_section, key, value)
+
+    @staticmethod
+    def _parse_bool(value):
+        """Parse boolean from string."""
+        return value.lower() in ("true", "1", "yes")
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         """
@@ -122,18 +133,18 @@ class AppConfig:
         if port := os.getenv("DR4DNA_SERVER_PORT"):
             config.server.port = int(port)
         if debug := os.getenv("DR4DNA_SERVER_DEBUG"):
-            config.server.debug = debug.lower() in ("true", "1", "yes")
+            config.server.debug = cls._parse_bool(debug)
 
         # Logging config
         if level := os.getenv("DR4DNA_LOGGING_LEVEL"):
             try:
                 config.logging.level = LogLevel(level.upper())
             except ValueError:
-                raise ConfigurationException(
+                raise ConfigurationError(
                     f"Invalid log level: {level}", config_key="logging.level", invalid_value=level
                 )
         if log_to_file := os.getenv("DR4DNA_LOGGING_TO_FILE"):
-            config.logging.log_to_file = log_to_file.lower() in ("true", "1", "yes")
+            config.logging.log_to_file = cls._parse_bool(log_to_file)
         if log_dir := os.getenv("DR4DNA_LOGGING_DIR"):
             config.logging.log_dir = Path(log_dir)
 
@@ -141,7 +152,7 @@ class AppConfig:
         if plugin_dir := os.getenv("DR4DNA_PLUGINS_DIR"):
             config.plugins.plugin_dir = Path(plugin_dir)
         if auto_load := os.getenv("DR4DNA_PLUGINS_AUTO_LOAD"):
-            config.plugins.auto_load = auto_load.lower() in ("true", "1", "yes")
+            config.plugins.auto_load = cls._parse_bool(auto_load)
         if timeout := os.getenv("DR4DNA_PLUGINS_TIMEOUT"):
             config.plugins.timeout_seconds = int(timeout)
 
@@ -149,7 +160,7 @@ class AppConfig:
         if max_perms := os.getenv("DR4DNA_PERFORMANCE_MAX_PERMUTATIONS"):
             config.performance.max_permutations = int(max_perms)
         if cache_enabled := os.getenv("DR4DNA_PERFORMANCE_CACHE_ENABLED"):
-            config.performance.cache_enabled = cache_enabled.lower() in ("true", "1", "yes")
+            config.performance.cache_enabled = cls._parse_bool(cache_enabled)
         if workers := os.getenv("DR4DNA_PERFORMANCE_WORKER_THREADS"):
             config.performance.worker_threads = int(workers)
 
@@ -159,9 +170,9 @@ class AppConfig:
 
         # Feature flags
         if analytics := os.getenv("DR4DNA_ENABLE_ANALYTICS"):
-            config.enable_analytics = analytics.lower() in ("true", "1", "yes")
+            config.enable_analytics = cls._parse_bool(analytics)
         if error_reporting := os.getenv("DR4DNA_ENABLE_ERROR_REPORTING"):
-            config.enable_error_reporting = error_reporting.lower() in ("true", "1", "yes")
+            config.enable_error_reporting = cls._parse_bool(error_reporting)
 
         return config
 
@@ -178,51 +189,52 @@ class AppConfig:
         """
         config = cls()
 
-        # Handle nested configurations
-        if "server" in data:
-            for key, value in data["server"].items():
-                if hasattr(config.server, key):
-                    setattr(config.server, key, value)
-
-        if "logging" in data:
-            for key, value in data["logging"].items():
-                if key == "level" and isinstance(value, str):
-                    value = LogLevel(value.upper())
-                if hasattr(config.logging, key):
-                    setattr(config.logging, key, value)
-
-        if "plugins" in data:
-            for key, value in data["plugins"].items():
-                if key == "plugin_dir" and isinstance(value, str):
-                    value = Path(value)
-                if hasattr(config.plugins, key):
-                    setattr(config.plugins, key, value)
-
-        if "performance" in data:
-            for key, value in data["performance"].items():
-                if hasattr(config.performance, key):
-                    setattr(config.performance, key, value)
+        # Handle nested configurations using common helper
+        cls._apply_dict_section(config.server, data.get("server"))
+        cls._apply_dict_section(config.logging, data.get("logging"), {"level": LogLevel})
+        cls._apply_dict_section(config.plugins, data.get("plugins"), {"plugin_dir": Path})
+        cls._apply_dict_section(config.performance, data.get("performance"))
 
         # Handle top-level config
+        top_level_converters = {"working_dir": Path}
         for key in ["working_dir", "enable_analytics", "enable_error_reporting"]:
             if key in data:
                 value = data[key]
-                if key == "working_dir" and isinstance(value, str):
-                    value = Path(value)
-                setattr(config, key, value)
+                converter = top_level_converters.get(key, lambda x: x)
+                setattr(config, key, converter(value) if isinstance(value, str) else value)
 
         return config
+
+    @classmethod
+    def _apply_dict_section(cls, section, data, converters=None):
+        """
+        Apply dictionary values to a config section.
+
+        Args:
+            section: Config section object to update
+            data: Dictionary of values to apply
+            converters: Optional dict mapping keys to converter functions
+        """
+        if not data:
+            return
+
+        converters = converters or {}
+        for key, value in data.items():
+            # Apply type conversion if specified
+            if key in converters and isinstance(value, str):
+                value = converters[key](value)
+            cls._set_nested_attr(section, key, value)
 
     def validate(self):
         """
         Validate configuration values.
 
         Raises:
-            ConfigurationException: If validation fails
+            ConfigurationError: If validation fails
         """
         # Validate server config
         if not 1 <= self.server.port <= 65535:
-            raise ConfigurationException(
+            raise ConfigurationError(
                 f"Invalid server port: {self.server.port}",
                 config_key="server.port",
                 invalid_value=self.server.port,
@@ -230,14 +242,14 @@ class AppConfig:
 
         # Validate plugin config
         if not self.plugins.plugin_dir.exists():
-            raise ConfigurationException(
+            raise ConfigurationError(
                 f"Plugin directory does not exist: {self.plugins.plugin_dir}",
                 config_key="plugins.plugin_dir",
                 invalid_value=str(self.plugins.plugin_dir),
             )
 
         if self.plugins.timeout_seconds < 1:
-            raise ConfigurationException(
+            raise ConfigurationError(
                 f"Invalid plugin timeout: {self.plugins.timeout_seconds}",
                 config_key="plugins.timeout_seconds",
                 invalid_value=self.plugins.timeout_seconds,
@@ -245,14 +257,14 @@ class AppConfig:
 
         # Validate performance config
         if self.performance.max_permutations < 1:
-            raise ConfigurationException(
+            raise ConfigurationError(
                 f"Invalid max permutations: {self.performance.max_permutations}",
                 config_key="performance.max_permutations",
                 invalid_value=self.performance.max_permutations,
             )
 
         if self.performance.worker_threads < 1:
-            raise ConfigurationException(
+            raise ConfigurationError(
                 f"Invalid worker threads: {self.performance.worker_threads}",
                 config_key="performance.worker_threads",
                 invalid_value=self.performance.worker_threads,

@@ -1,65 +1,71 @@
-"""
+r"""
 This tool should allow a user to:
-1) Decode a file encoded with NOREC4DNA
-2) if there are not enough packets to decode the file, the user should get:
-    - a list of missing chunks
-    - a partial result with \x00 for missing chunks
-    - ideally a ranking of the missing chunks based on how many additional chunks could be retrived if it was present
-3) view the file (either as hex, image or as a text) and manually select corrupt chunks
-    - based on the selected chunks the tool will then suggest which packet(s) might have caused the corruption
-    - the used can then request a new decoding with the detected packet removed
+
+1. Decode a file encoded with NOREC4DNA.
+2. If there are not enough packets to decode the file, the user should get:
+   - a list of missing chunks
+   - a partial result with \x00 for missing chunks
+   - ideally a ranking of the missing chunks based on how many additional
+     chunks could be retrieved if it was present
+3. View the file (either as hex, image or as a text) and manually select
+   corrupt chunks.
+   - based on the selected chunks the tool will then suggest which packet(s)
+     might have caused the corruption
+   - the user can then request a new decoding with the detected packet removed
 
 Automatic mode:
-1) if there are multiple packets with the same packet-id (or very close hamming distance in total):
-    - the tool should try each combination of these packets
-    - if there are (multiple) checksums in the header chunks, the tool could automatically find the corrupt packets and either:
-        - remove them from the decoding because there are still enough packets left to decode the file
-        - bruteforce the corrupt chunks until the checksums match (this can be done in parallel and using believe propagation)
-2) if there is only a single packet with this id:
-    - the tool can only try to bruteforce the corrupt chunks / packets:
-        IF WE BRUTEFORCE THE CHUNK WE MIGHT HAVE A PROBLEM IF THE PACKET HAD A MUTATION AT THE START (wrong ID!)
-            we can avoid this pitfall by NOT using the chunk-mapping of the corrupt packet!
-        IF WE BRUTEFORCE THE PACKET WE CANT DIRECTLY USE THE CRC (we must always perform a belief propagation / gauss elimination) - this is slower
+
+1. If there are multiple packets with the same packet-id (or very close hamming
+   distance in total):
+   - the tool should try each combination of these packets
+   - if there are (multiple) checksums in the header chunks, the tool could
+     automatically find the corrupt packets and either:
+     - remove them from the decoding because there are still enough packets
+       left to decode the file
+     - bruteforce the corrupt chunks until the checksums match (this can be
+       done in parallel and using believe propagation)
+2. If there is only a single packet with this id:
+   - the tool can only try to bruteforce the corrupt chunks / packets:
+     IF WE BRUTEFORCE THE CHUNK WE MIGHT HAVE A PROBLEM IF THE PACKET HAD A
+     MUTATION AT THE START (wrong ID!)
+         we can avoid this pitfall by NOT using the chunk-mapping of the
+         corrupt packet!
+     IF WE BRUTEFORCE THE PACKET WE CANT DIRECTLY USE THE CRC (we must always
+     perform a belief propagation / gauss elimination) - this is slower.
 """
+
 import argparse
-import os
 import shutil
 import struct
 import typing
 from functools import reduce
-from importlib.metadata import metadata
 from io import BytesIO
 from itertools import combinations
 from pathlib import Path
-from time import sleep
 
-import crcmod
-import magic
 import numpy as np
-from numpy.linalg import matrix_rank
 
-import NOREC4DNA.norec4dna.helper as helper
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
 from NOREC4DNA.file_update_coding import reduce_packet_to_chunk
 from NOREC4DNA.invivo_window_decoder import load_fasta
-from NOREC4DNA.metadata_coding import parse_metadata_file
-from NOREC4DNA.norec4dna.GEPP import GEPP
 from NOREC4DNA.norec4dna.HeaderChunk import HeaderChunk
 from NOREC4DNA.norec4dna.helper.helper_cpu_single_core import xor_numpy
 from NOREC4DNA.norec4dna.helper.quaternary2Bin import tranlate_quat_to_byte
 from NOREC4DNA.norec4dna.helper.RU10Helper import from_true_false_list
 from NOREC4DNA.norec4dna.LTDecoder import LTDecoder
 from NOREC4DNA.norec4dna.OnlineDecoder import OnlineDecoder
-from NOREC4DNA.norec4dna.Packet import Packet
 from NOREC4DNA.norec4dna.RU10Decoder import RU10Decoder
 from NOREC4DNA.norec4dna.RU10Packet import RU10Packet
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
 
 
 class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
+    """Multi-version decoder for NOREC4DNA encoded files."""
+
     def __init__(
         self, decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder], metadata_list=None
     ):
+        """Initialize the MultiVersionDecoder with a decoder instance."""
         super().__init__(decoder)
         self.last_chunk_len_format = "I"
         self.checksum_len_format = None
@@ -79,9 +85,12 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
 
     def get_versions_in_pool(self, base_dna_version_string) -> int:
         """
-        Returns the largest version number that is available in the pool for the given base_dna_version_string.
-        If no version is available, it should return 0 (base-version only)
-        Versions are indexed starting from 0, where version 1 is the FIRST version after the base version.
+        Returns the largest version number available in the pool for the given
+        base_dna_version_string.
+
+        If no version is available, it should return 0 (base-version only).
+        Versions are indexed starting from 0, where version 1 is the FIRST
+        version after the base version.
         """
         res = 0
         fasta_entries = load_fasta(self.decoder.file)
@@ -94,8 +103,9 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
 
     def get_sequences_for_version(self, base_dna_version_string, version) -> typing.List[str]:
         """
-        Returns a list of all sequences in the file that correspond to the given version.
-        If no version is available, it should return an empty list.
+        Return a list of all sequences corresponding to the given version.
+
+        If no version is available, return an empty list.
         """
         res = []
         fasta_entries = load_fasta(self.decoder.file)
@@ -108,17 +118,13 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         return res
 
     def contains_metadata(self, seq, metadata_list=None):
-        """
-        returns True
-        """
+        """Return True if the sequence contains metadata."""
         if metadata_list is None:
             metadata_list = self.metadata_list
-        return any([metadata in seq for metadata in metadata_list])
+        return any(metadata in seq for metadata in metadata_list)
 
     def decode_base_version(self, base_dna_version_string, known_base_file=None):
-        """
-        Decode the base version (version 0) and store the result on disk. If the base version is already decoded, it should load the result from disk instead of decoding it again.
-        """
+        """Decode the base version (version 0) and store it on disk."""
         """
         if known_base_file is not None and Path(known_base_file).exists():
             print(f"Base version already decoded, loading from {known_base_file}", flush=True)
@@ -141,17 +147,9 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         print("Decoding base version...", flush=True)
         # we MUST filter out packets that contain the base_dna_version_string:
         fasta_entries = load_fasta(self.decoder.file)
-        # fasta_seqs = [seq for seq in fasta_entries.values() if base_dna_version_string not in seq]
-        # store the fasta_seqs WITH metadata in a temporary list:
-        version_seqs = [
-            seq
-            for seq in fasta_entries.values()
-            if self.contains_metadata(seq, [base_dna_version_string])
-        ]
-        metadata_seqs = [
-            seq for seq in fasta_entries.values() if self.contains_metadata(seq, self.metadata_list)
-        ]
-        # we must filter out any sequences containing metadata information (otherwise we would have to fallback to DR4DNA to revert the changed content due to the metadata insertion)
+        # we must filter out any sequences containing metadata information
+        # (otherwise we would have to fallback to DR4DNA to revert the changed
+        # content due to the metadata insertion)
         fasta_seqs = [
             seq
             for seq in fasta_entries.values()
@@ -189,7 +187,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
             self.decoder.input_new_packet(packet)
             self.decoder.packets.append(packet)
             if len(self.decoder.packets) >= self.decoder.static_number_of_chunks:
-                if res := self.decoder.solve():
+                if self.decoder.solve():
                     break
         # self.decoder.GEPP()
         if self.decoder.use_headerchunk:
@@ -199,7 +197,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 Path(self.decoder.headerChunk.file_name.decode("utf-8")).rename(
                     "v0_" + self.decoder.headerChunk.file_name.decode("utf-8")
                 )
-            except FileNotFoundError as e:
+            except FileNotFoundError:
                 # if the file does not exist, we can safely ignore the error!
                 pass
         file_name = self.decoder.saveDecodedFile(
@@ -211,11 +209,13 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
 
     def decode_to_version(self, base_dna_version_string, version):
         """
-        Decodes the file up to the given version. As each version is based on the previous version, this function iteratively decodes each version up to the selected version and stores all intermediate versions on disk.
-        Existing versions are loaded from disk and do not need to be decoded again.
-        If the version is not in the pool, it should return an error message.
+        Decode the file up to the given version.
 
-        @param version: the version to decode to
+        As each version is based on the previous version, this function
+        iteratively decodes each version up to the selected version and stores
+        all intermediate versions on disk. Existing versions are loaded from
+        disk and do not need to be decoded again. If the version is not in the
+        pool, it should return an error message.
         """
         # versions = []
         # versions.append(self.decode_base_version(base_dna_version_string))
@@ -311,7 +311,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         @param b: the target vector
         @return: a list of rows in a that can be used to create b or None if no solution exists
         """
-        combs = [[x for x in combinations(a, i)] for i in range(1, min(4, len(a) + 1))]
+        combs = [list(combinations(a, i)) for i in range(1, min(4, len(a) + 1))]
         for comb in combs:
             for elem in comb:
                 if len(elem) > 1:
@@ -393,17 +393,17 @@ if __name__ == "__main__":
     file = parsed_args.ini
     if parsed_args.metadata_file is not None:
         # split the arg at "," and parse each file as fasta file, then extract the sequences and store them in a list:
-        metadata = []
+        metadata_list = []
         for metadata_file in parsed_args.metadata_file.split(","):
             fasta_entries = load_fasta(metadata_file)
-            metadata.extend(fasta_entries.values())
+            metadata_list.extend(fasta_entries.values())
     else:
-        metadata = parsed_args.metadata.split(",")
+        metadata_list = parsed_args.metadata.split(",")
 
     x = ConfigReadAndExecute(file).execute(return_decoder=True)[0]
     semi_automatic_solver = SemiAutomaticReconstructionToolkit(x)
     print(semi_automatic_solver.view_file_with_chunkborders(False, False, "I"), flush=True)
-    mv_decoder = MultiVersionDecoder(x, metadata)
+    mv_decoder = MultiVersionDecoder(x, metadata_list)
     mv_decoder.decode_base_version("GAGCCAGTGAGTCGTA")
 
     mv_decoder.decode_to_version("GAGCCAGTGAGTCGTA", 1)

@@ -1,3 +1,8 @@
+"""
+This script runs an experiment multiple times and for different overhead values.
+Besides saving the raw collected data, it also saves the parsed data in a csv file and plots the results.
+"""
+
 import copy
 import csv
 import datetime
@@ -12,15 +17,10 @@ import matplotlib.pyplot as plt
 import pandas
 import seaborn as sns
 from matplotlib.lines import Line2D
-from norec4dna import get_error_correction_encode, nocode
+from norec4dna import get_error_correction_encode
 
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
 from NOREC4DNA.demo_raptor_encode import demo_raptor_encode
-
-"""
-This script runs an experiment multiple times and for different overhead values.
-Besides saving the raw collected data, it also saves the parsed data in a csv file and plots the results.
-"""
 
 packet_count_already_encoded = set()
 
@@ -36,6 +36,7 @@ __no_repair_symbols = 0
 def create_en_de_coders(
     file, chunk_size=__chunk_size, error_correction_str="nocode", no_repair_symbols=0, overhead=0.05
 ):
+    """Create encoder and decoder for NOREC4DNA experiment."""
     decoder_res = {}
     while len(decoder_res) < 1:
         error_correction = get_error_correction_encode(error_correction_str, no_repair_symbols)

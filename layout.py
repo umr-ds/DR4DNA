@@ -1,23 +1,30 @@
+"""Layout generation for DR4DNA Dash application."""
+
 import dash_daq as daq
-import dash_extensions.enrich as dash
-from dash import ctx
 from dash_canvas.DashCanvas import DashCanvas
-from dash_extensions.enrich import (
-    ALL,
-    MATCH,
-    DashProxy,
-    Input,
-    MultiplexerTransform,
-    Output,
-    State,
-    dcc,
-    html,
-)
+from dash_extensions.enrich import dcc, html
 
 
 def gen_app_layout(
     semi_automatic_solver, max_chunk_tag, force_load_plugins, all_plugins_childs, show_canvas, child
 ):
+    """
+    Generate the main application layout.
+
+    Creates the complete Dash HTML layout including error stores, loading indicators,
+    analytics display, repair controls, canvas, and plugin sections.
+
+    Args:
+        semi_automatic_solver: Solver instance for file type prediction
+        max_chunk_tag: Maximum chunk tag value
+        force_load_plugins: List of force load plugin buttons
+        all_plugins_childs: List of plugin UI components
+        show_canvas: Boolean indicating if canvas should be displayed
+        child: List of child components for the main view
+
+    Returns:
+        HTML div containing the complete application layout
+    """
     return html.Div(
         children=[
             # Hidden stores for state management

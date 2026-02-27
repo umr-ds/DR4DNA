@@ -1,8 +1,19 @@
+"""Configuration utilities for DR4DNA."""
+
 # coding=utf-8
 import os
 
 
 def str2bool(txt):
+    """
+    Convert text string to boolean value.
+
+    Args:
+        txt: Text string to convert
+
+    Returns:
+        True if txt is 'true' or "'true'" (case-insensitive), False otherwise
+    """
     return txt is not None and txt.lower() in ["true", "'true'"]
 
 
@@ -30,7 +41,7 @@ try:
         .split('": "')[1]
         .split("/")[0]
     )
-except:
+except Exception:
     print("Failed getting docker IPs, using fallback values!")
     postgres_ip = "172.22.0.2"  # docker network inspect dnasim_no-internet | grep "postgres" -A 4 | grep "IPv4Address"
     redis_ip = (
@@ -41,6 +52,8 @@ redis_password = os.environ.get("REDIS_PASSWORD") or None  # set to None if not 
 
 
 class Config(object):
+    """Base configuration class for DR4DNA Flask application."""
+
     DEBUG = True
     TESTING = True
     CSRF_ENABLED = True
@@ -58,6 +71,8 @@ class Config(object):
 
 
 class ProductionConfig(Config):
+    """Production configuration with debugging disabled."""
+
     DEBUG = False
     TESTING = False
     DEVELOPMENT = False
@@ -65,14 +80,20 @@ class ProductionConfig(Config):
 
 
 class StagingConfig(Config):
+    """Staging configuration for development testing."""
+
     DEVELOPMENT = True
     DEBUG = True
 
 
 class DevelopmentConfig(Config):
+    """Development configuration with debugging enabled."""
+
     DEVELOPMENT = True
     DEBUG = True
 
 
 class TestingConfig(Config):
+    """Testing configuration for unit tests."""
+
     TESTING = True

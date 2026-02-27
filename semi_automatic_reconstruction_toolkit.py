@@ -40,7 +40,6 @@ from norec4dna.LTDecoder import LTDecoder
 from norec4dna.OnlineDecoder import OnlineDecoder
 from norec4dna.Packet import Packet
 from norec4dna.RU10Decoder import RU10Decoder
-from numpy.linalg import matrix_rank
 
 import NOREC4DNA.norec4dna.helper as helper
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
@@ -74,9 +73,7 @@ class SemiAutomaticReconstructionToolkit:
 
     def calculate_unused_packets(self):
         # return all packets that are still possible erroneous after all chunks are tagged as valid
-        return self.decoder.GEPP.get_common_packets(
-            [], [i for i in range(self.decoder.number_of_chunks)]
-        )
+        return self.decoder.GEPP.get_common_packets([], list(range(self.decoder.number_of_chunks)))
 
     def manual_repair(self, chunk_id, corrupt_packet_id, repaired_content):
         """
@@ -182,7 +179,7 @@ class SemiAutomaticReconstructionToolkit:
                 and not any(tmp_gepp.find_missing_chunks())
                 and tmp_gepp.solve()
             )
-        except:
+        except Exception:
             res = False
         return res, tmp_gepp
 
@@ -220,7 +217,7 @@ class SemiAutomaticReconstructionToolkit:
             tmp_gepp.addRow(a_row, b_row)
             try:
                 res = tmp_gepp.isPotentionallySolvable() and tmp_gepp.solve()
-            except:
+            except Exception:
                 res = False
             if res:
                 mapping[i] = tmp_gepp
@@ -297,12 +294,12 @@ class SemiAutomaticReconstructionToolkit:
         ret = []
         for j, line in enumerate(res):
             try:
-                line = line.tobytes()
+                line = line.tobytes()  # type: ignore[attr-defined]
             except Exception:
                 pass
             s1 = " ".join([f"{i:02x}" for i in line])
             try:
-                width = res[0].shape[1]
+                width = res[0].shape[1]  # type: ignore[attr-defined]
             except Exception:  # if first row is not decoded, it will be of type bytes!
                 width = len(res[0])
             s2 = "".join([chr(i) if 32 <= i < 127 else "." for i in line])
@@ -380,7 +377,7 @@ class SemiAutomaticReconstructionToolkit:
         @param b: the target vector
         @return: a list of rows in a that can be used to create b or None if no solution exists
         """
-        combs = [[x for x in combinations(a, i)] for i in range(1, min(4, len(a) + 1))]
+        combs = [list(combinations(a, i)) for i in range(1, min(4, len(a) + 1))]
         for comb in combs:
             for elem in comb:
                 if len(elem) > 1:

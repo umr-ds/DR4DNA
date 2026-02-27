@@ -6,7 +6,7 @@ Provides common helper functions used across multiple modules.
 """
 
 import itertools
-from typing import List, Union
+from typing import Union
 
 
 def filter_nonprintable(text: str) -> str:

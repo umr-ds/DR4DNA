@@ -5,7 +5,7 @@ Pytest fixtures and configuration for DR4DNA tests.
 This module provides shared fixtures and utilities for the test suite.
 """
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import numpy as np
 import pytest

@@ -1,10 +1,10 @@
 # This is a generated file! Please edit source .ksy file and use kaitai-struct-compiler to rebuild
 import re
-import sys
 from enum import Enum
+from io import BytesIO
 
 import kaitaistruct
-from kaitaistruct import BytesIO, KaitaiStream, KaitaiStruct
+from kaitaistruct import KaitaiStream, KaitaiStruct
 
 from CustomExceptions import InvalidDataException
 
@@ -124,7 +124,6 @@ class Zip(KaitaiStruct):
 
             def read_except(len_body):
                 try:
-                    exception_at = self._io.pos()
                     return self._io.read_bytes(len_body)
                 except EOFError as ex:
                     allowed_bytes = int(
@@ -168,7 +167,6 @@ class Zip(KaitaiStruct):
         def _read(self, start_offset=0):
             def read_except(len_body):
                 try:
-                    exception_at = self._io.pos()
                     return self._io.read_bytes(len_body)
                 except EOFError as ex:
                     allowed_bytes = int(
@@ -431,7 +429,7 @@ class Zip(KaitaiStruct):
             self.int_file_attr = self._io.read_u2le()
             self.ext_file_attr = self._io.read_u4le()
             self.ofs_local_header = self._io.read_s4le()
-            exception_at = self._io.pos()
+            # exception_at = self._io.pos()
             try:
                 self._raw_file_name = self._io.read_bytes(self.len_file_name)
             except EOFError as ex:
@@ -454,7 +452,7 @@ class Zip(KaitaiStruct):
 
             # if length of filename is shorter than expected, we have to guess if the length field is corrupt, or if
             # the filename is corrupt and thus contains illegal bytes...
-            exception_at = self._io.pos()
+            # exception_at = self._io.pos()
             try:
                 self._raw_extra = self._io.read_bytes(self.len_extra)
             except EOFError as ex:
@@ -478,7 +476,7 @@ class Zip(KaitaiStruct):
                 raise InvalidDataException(
                     "/types/extra/invalid", len_extra_io_pos, expected=allowed_bytes
                 )
-            exception_at = self._io.pos()
+            # exception_at = self._io.pos()
             try:
                 comment = self._io.read_bytes(self.len_comment)
             except EOFError as ex:
@@ -609,7 +607,7 @@ class Zip(KaitaiStruct):
             self.len_extra = self._io.read_u2le()
             # len_extra must be a multiple of 4!
             allowed_bytes = None
-            exception_at = self._io.pos()
+            # exception_at = self._io.pos()
             try:
                 self._raw_file_name = self._io.read_bytes(self.len_file_name)
             except EOFError as ex:
@@ -645,7 +643,7 @@ class Zip(KaitaiStruct):
 
             allowed_bytes = None
             try:
-                exception_at = self._io.pos()
+                # exception_at = self._io.pos()
                 raw_extra_start_pos = self._io.pos()
                 self._raw_extra = self._io.read_bytes(self.len_extra)
             except EOFError as ex:
@@ -775,8 +773,8 @@ class Zip(KaitaiStruct):
             self.len_comment = self._io.read_u2le()
             allowed_bytes = None
             try:
-                exception_at = self._io.pos()
-                raw_extra_start_pos = self._io.pos()
+                # exception_at = self._io.pos()
+                # raw_extra_start_pos = self._io.pos()
                 comment = self._io.read_bytes(self.len_comment)
                 self.comment = comment.decode("UTF-8", "ignore")
             except EOFError as ex:

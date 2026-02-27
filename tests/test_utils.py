@@ -5,10 +5,6 @@ Tests for utility functions.
 This module contains unit tests for the utility functions in utils.py.
 """
 
-from unittest.mock import Mock, patch
-
-import pytest
-
 from utils import (
     bytes_to_hex_string,
     bytes_to_printable_string,

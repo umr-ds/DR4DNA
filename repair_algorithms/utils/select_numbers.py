@@ -108,7 +108,7 @@ def select_numbers(
 
     sets = [set(input_map[k]) for k in keys]
 
-    cnt = Counter()
+    cnt: Counter[int] = Counter()
     for s in sets:
         cnt.update(s)
 

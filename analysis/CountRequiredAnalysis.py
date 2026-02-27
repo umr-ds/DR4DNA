@@ -1,18 +1,15 @@
-import matplotlib
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
-from matplotlib.pyplot import cm
-
-font = {"size": 22}
-
 """
 This script creates plots analyzing the effect of tagging packets as valid or invalid under various configurations.
 
 It uses the output of the "CountRequiredTags"-plugin as the input. This plugin is disabled by default, so you have to
 enable it by clicking on it in the plugin list.
 """
+
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.pyplot import cm
 
 # matplotlib.rc('font', **font)
 
@@ -52,14 +49,14 @@ cmap.set_array([])
 fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32, 9), dpi=100)
 fig.supylabel("remaining packets")
 
-for i, c in zip(range(20), color):
+for i, _c in zip(range(20), color):
     tmp = df[df["invalid"] == i].groupby(["selected_rows"]).mean()
     p = ax[0].plot(tmp["valid"], tmp["avg_degree"], label=f"invalid={i}", c=cmap.to_rgba(i + 1))
 ax[0].grid(True)
 ax[0].set_xticks(np.arange(0, 19, step=2))
 ax[0].set_xlabel("chunks tagged as valid")
 
-for i, c in zip(range(20), color):
+for i, _c in zip(range(20), color):
     tmp = df[df["valid"] == i].groupby(["selected_rows"]).mean()
     t_plt = ax[1].plot(tmp["invalid"], tmp["avg_degree"], label=f"valid={i}", c=cmap.to_rgba(i + 1))
 

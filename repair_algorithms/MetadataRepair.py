@@ -33,7 +33,7 @@ class MetadataRepair(RandomShuffleRepair):
     def load_metadata_seqs_as_bytes(
         self, filename: str = "./NOREC4DNA/wanted_meta.fasta"
     ) -> typing.List[bytes]:
-        parsed = []
+        parsed: typing.List[typing.Any] = []
         try:
             tmp = parse_metadata_file(filename)
             parsed = set([tranlate_quat_to_byte(x) for x in tmp])
@@ -273,8 +273,8 @@ class MetadataRepair(RandomShuffleRepair):
         @returns: sorted_A, sorted_b with only one representative per metadata-packet (unique seed)
         """
         # Get all rows that should be removed (non-representatives)
-        rows_to_remove = set()
-        for representative, row_set, has_non_metadata in set_representatives:
+        rows_to_remove: typing.Set[typing.Any] = set()
+        for representative, row_set, _has_non_metadata in set_representatives:
             # Add all rows from the set except the representative
             rows_to_remove.update(row_set - {representative})
 
@@ -295,12 +295,7 @@ class MetadataRepair(RandomShuffleRepair):
         equal_seed_rows = self.find_equal_seed_rows(sorted_A)
         combined_rows = rows_with_headerchunk.union(rows_with_lastchunk)
         set_representatives: typing.List[typing.Tuple[int, typing.FrozenSet[int], bool]] = sorted(
-            [
-                x
-                for x in self.find_representative(
-                    equal_seed_rows, combined_rows, rows_with_metadata
-                )
-            ],
+            list(self.find_representative(equal_seed_rows, combined_rows, rows_with_metadata)),
             key=lambda x: x[2],
             reverse=True,
         )
@@ -540,7 +535,7 @@ class MetadataRepair(RandomShuffleRepair):
     def set_no_columns_to_repair(self, *args, **kwargs):
         try:
             self.no_columns_to_repair = int(kwargs["c_ctx"].triggered[0]["value"])
-        except:
+        except (ValueError, TypeError, IndexError):
             print("Error: could not set number of columns to repair")
         return {"updates_b": False, "refresh_view": False}
 

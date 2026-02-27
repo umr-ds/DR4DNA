@@ -6,12 +6,9 @@ This service encapsulates all decoder-related operations and provides
 a clean API for the UI layer.
 """
 
-import logging
 import typing
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
 
 from exceptions import DecodeError, DecoderException, FileIOException
 from logging_config import get_logger

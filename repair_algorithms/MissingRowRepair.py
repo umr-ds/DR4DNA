@@ -28,7 +28,7 @@ class MissingRowRepair(FileSpecificRepair):
         self.missing_rows = (
             self.semi_automatic_solver.decoder.GEPP.result_mapping == -1
         ).transpose()[0]
-        for i in range(len(self.missing_rows)):
+        for _i in range(len(self.missing_rows)):
             if self.missing_rows[i]:
                 self.chunk_tag[i] = 3
             elif self.chunk_tag[i] == 3:
@@ -147,7 +147,7 @@ class MissingRowRepair(FileSpecificRepair):
         }
 
     def commit_rows(self, *args, **kwargs):
-        for i, row in enumerate(self.added_rows):
+        for _i, row in enumerate(self.added_rows):
             added_row_a = np.zeros(
                 self.semi_automatic_solver.decoder.GEPP.A.shape[1], dtype=np.bool
             )

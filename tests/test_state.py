@@ -5,8 +5,6 @@ Tests for the state management module.
 This module contains unit tests for the AppState class and related functions.
 """
 
-from unittest.mock import Mock, patch
-
 import pytest
 
 from exceptions import PluginManagerNotInitializedError, SolverNotInitializedError
