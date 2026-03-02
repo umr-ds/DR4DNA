@@ -98,10 +98,7 @@ class CallbackResponse:
                 + recalc_view_result
                 + (dash.no_update, dash.no_update, self.canvas_image_content, self.kaitai_view)
             )
-        return (
-            (self.info_str,)
-            + self.create_no_update_tuple(13)
-        )
+        return (self.info_str,) + self.create_no_update_tuple(13)
 
 
 class PluginCallbackHandler:
@@ -151,7 +148,9 @@ class PluginCallbackHandler:
         """
         return self.state.get_plugin_manager()
 
-    def handle_plugin_io(self, trigger_id: str, c_ctx: typing.Any, *args, **kwargs) -> tuple:
+    def handle_plugin_io(
+        self, trigger_id: str, c_ctx: typing.Any, *args: typing.Any, **kwargs: typing.Any
+    ) -> tuple:
         """
         Handle plugin I/O callbacks.
 
@@ -181,7 +180,12 @@ class PluginCallbackHandler:
         return response.create_standard_response()
 
     def _process_plugin_callback(
-        self, value: typing.Dict, c_ctx: typing.Any, response: CallbackResponse, *args, **kwargs
+        self,
+        value: typing.Dict,
+        c_ctx: typing.Any,
+        response: CallbackResponse,
+        *args: typing.Any,
+        **kwargs: typing.Any,
     ) -> tuple:
         """
         Process a plugin callback and build response.

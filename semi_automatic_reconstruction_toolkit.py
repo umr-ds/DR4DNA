@@ -220,9 +220,9 @@ class SemiAutomaticReconstructionToolkit:
 
         for i in np.arange(valid_packets, self.decoder.GEPP.A.shape[0]):
             if only_possible_invalid_packets:
-                tmp_gepp: GEPP = GEPP(mod_tmp_gepp.A.copy(), mod_tmp_gepp.b.copy())
+                tmp_gepp: GEPP = GEPP(np.copy(mod_tmp_gepp.A), np.copy(mod_tmp_gepp.b))
             else:
-                tmp_gepp: GEPP = GEPP(self.initial_A.copy(), self.initial_b.copy())
+                tmp_gepp: GEPP = GEPP(np.copy(self.initial_A), np.copy(self.initial_b))
             a_row = tmp_gepp.A[i].copy()
             b_row = tmp_gepp.b[i].copy()
             tmp_gepp.remove_row(i)

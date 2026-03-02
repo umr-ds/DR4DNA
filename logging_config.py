@@ -9,11 +9,15 @@ This module provides centralized logging setup with support for:
 - Different log levels for different components
 """
 
+import functools
 import logging
 import logging.handlers
 import sys
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, TypeVar
+
+from typing_extensions import ParamSpec
 
 # Log format templates
 SIMPLE_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -29,6 +33,10 @@ JSON_FORMAT = (
 
 # Default log directory
 DEFAULT_LOG_DIR = Path(__file__).parent / "logs"
+
+# Type variables for preserving function signatures in decorators
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class LogFormatter(logging.Formatter):
@@ -167,24 +175,32 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"dr4dna.{name}")
 
 
-def log_function_call(logger: Optional[logging.Logger] = None):
+def log_function_call(
+    logger: Optional[logging.Logger] = None,
+) -> Callable[Callable[P, R], Callable[P, R]]:
     """
     Log function calls and their execution time.
 
+    This decorator preserves the original function signature using ParamSpec,
+    ensuring type checkers and IDEs see the correct parameter and return types.
+
     Usage:
         @log_function_call
-        def my_function(arg1, arg2):
+        def my_function(arg1: int, arg2: str) -> bool:
             pass
 
-    Args:
-        logger: Logger to use (if None, uses module logger)
-    """
-    import functools
-    import time
+        # my_function still has signature (int, str) -> bool after decoration
 
-    def decorator(func):
+    Args:
+        logger: Logger to use. If None, uses the module logger for the decorated function.
+
+    Returns:
+        Decorator function that wraps the target function with logging
+    """
+
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             nonlocal logger
             if logger is None:
                 logger = get_logger(func.__module__)

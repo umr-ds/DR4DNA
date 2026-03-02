@@ -1,4 +1,9 @@
-"""Layout generation for DR4DNA Dash application."""
+"""
+Layout generation for DR4DNA Dash application.
+
+Provides functions to generate the main application layout including
+all UI components, controls, and visualization elements.
+"""
 
 import dash_daq as daq
 from dash_canvas.DashCanvas import DashCanvas
@@ -23,7 +28,16 @@ def gen_app_layout(
         child: List of child components for the main view
 
     Returns:
-        HTML div containing the complete application layout
+        html.Div: Complete application layout containing:
+            - Error notification store and container
+            - Loading indicators
+            - Analytics overview (file type, invalid packets)
+            - Single/Multi-error mode toggle
+            - Colorblind mode toggle
+            - Control buttons (analyze, repair, etc.)
+            - File view with chunk borders
+            - Canvas for visualization (optional)
+            - Plugin sections
     """
     return html.Div(
         children=[

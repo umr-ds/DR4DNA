@@ -1,4 +1,9 @@
-"""Configuration utilities for DR4DNA."""
+"""
+Configuration utilities for DR4DNA.
+
+Provides configuration classes for different deployment environments
+and utility functions for configuration parsing.
+"""
 
 # coding=utf-8
 import os
@@ -13,6 +18,16 @@ def str2bool(txt):
 
     Returns:
         True if txt is 'true' or "'true'" (case-insensitive), False otherwise
+
+    Examples:
+        >>> str2bool("true")
+        True
+        >>> str2bool("TRUE")
+        True
+        >>> str2bool("false")
+        False
+        >>> str2bool(None)
+        False
     """
     return txt is not None and txt.lower() in ["true", "'true'"]
 
@@ -52,7 +67,12 @@ redis_password = os.environ.get("REDIS_PASSWORD") or None  # set to None if not 
 
 
 class Config(object):
-    """Base configuration class for DR4DNA Flask application."""
+    """
+    Base configuration class for DR4DNA Flask application.
+
+    Provides default configuration values for testing environment with
+    environment variable overrides for sensitive values.
+    """
 
     DEBUG = True
     TESTING = True
@@ -71,7 +91,11 @@ class Config(object):
 
 
 class ProductionConfig(Config):
-    """Production configuration with debugging disabled."""
+    """
+    Production configuration with debugging disabled.
+
+    Inherits all base configuration but disables debug mode for security.
+    """
 
     DEBUG = False
     TESTING = False
@@ -80,20 +104,32 @@ class ProductionConfig(Config):
 
 
 class StagingConfig(Config):
-    """Staging configuration for development testing."""
+    """
+    Staging configuration for development testing.
+
+    Similar to production but with debugging enabled for troubleshooting.
+    """
 
     DEVELOPMENT = True
     DEBUG = True
 
 
 class DevelopmentConfig(Config):
-    """Development configuration with debugging enabled."""
+    """
+    Development configuration with debugging enabled.
+
+    Used for local development with full debugging capabilities.
+    """
 
     DEVELOPMENT = True
     DEBUG = True
 
 
 class TestingConfig(Config):
-    """Testing configuration for unit tests."""
+    """
+    Testing configuration for unit tests.
+
+    Optimized for automated testing with minimal overhead.
+    """
 
     TESTING = True

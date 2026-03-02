@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""
+Setup script for DR4DNA package installation.
+
+Handles package installation with automatic dependency resolution and
+Kaitai Struct format compilation.
+
+Usage:
+    pip install .
+    python setup.py install
+"""
 import subprocess
 from pathlib import Path
 
@@ -7,7 +17,20 @@ from setuptools.command.install import install
 
 
 class CustomInstall(install):
+    """
+    Custom installation command that ensures dependencies are installed.
+
+    Extends the standard install command to automatically install
+    requirements from requirements.txt after the main installation.
+    """
+
     def run(self):
+        """
+        Run the installation process.
+
+        First runs the standard installation, then installs dependencies
+        from requirements.txt using pip.
+        """
         install.run(self)  # Run the default installation first
         subprocess.check_call(["pip", "install", "-r", "requirements.txt"])
 

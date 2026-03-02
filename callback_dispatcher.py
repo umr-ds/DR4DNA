@@ -59,7 +59,9 @@ class CallbackDispatcher:
         """
         self._routes.extend(routes)
 
-    def dispatch(self, trigger_id: str, handler: typing.Any, *args, **kwargs) -> typing.Any:
+    def dispatch(
+        self, trigger_id: str, handler: typing.Any, *args: typing.Any, **kwargs: typing.Any
+    ) -> typing.Any:
         """
         Dispatch a callback event to the appropriate handler method.
 
@@ -102,6 +104,19 @@ class CallbackDispatcher:
             if trigger_id in route.trigger_ids:
                 return route
         return None
+
+    def get_all_routes(self) -> typing.List[CallbackRoute]:
+        """
+        Get all registered callback routes.
+
+        Returns:
+            List of all registered CallbackRoute objects
+        """
+        return self._routes.copy()
+
+    def clear_routes(self) -> None:
+        """Clear all registered callback routes."""
+        self._routes.clear()
 
     def list_routes(self) -> typing.List[typing.Dict[str, str]]:
         """

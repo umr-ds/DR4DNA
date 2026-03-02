@@ -4,7 +4,7 @@ Custom exceptions for DR4DNA application.
 
 Provides specific exception types for better error handling and reporting.
 """
-
+import typing
 from typing import Any, Optional
 
 
@@ -72,7 +72,7 @@ class RepairException(RepairError):
 class RepairValidationError(RepairError):
     """Raised when a repair operation validation fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: typing.Any):
         """Initialize RepairValidationError with message and optional details."""
         self.details = kwargs
         super().__init__(message)
@@ -93,7 +93,7 @@ class DecoderException(DR4DNAError):
 class DecodeError(DecoderException):
     """Raised when decoding fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: typing.Any):
         """Initialize DecodeError with message and optional details."""
         self.details = kwargs
         super().__init__(message)

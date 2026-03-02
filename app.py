@@ -130,10 +130,14 @@ input_callback_handler = [
 
 def init_globals(solver):
     """
-    Initialize global application state.
+    Initialize global application state and UI components.
+
+    Sets up the initial application state including chunk tags, column tags,
+    plugin loading, and file view generation. This function is called once
+    during application startup.
 
     Args:
-        solver: SemiAutomaticReconstructionToolkit instance
+        solver: SemiAutomaticReconstructionToolkit instance for DNA data reconstruction
     """
     global chunk_tag, column_tag, child, force_load_plugins, all_plugins_childs, canvas_list
     state = get_app_state()
@@ -205,7 +209,12 @@ def init_globals(solver):
 
 
 def get_column_tag():
-    """Get current column tags from application state."""
+    """
+    Get current column tags from application state.
+
+    Returns:
+        List of column tag values (integers indicating correctness)
+    """
     return get_app_state().get_column_tag()
 
 
@@ -214,18 +223,27 @@ def update_column_tag(tag):
     Update column tags in application state.
 
     Args:
-        tag: List of column tag values
+        tag: List of column tag values (integers)
     """
     get_app_state().update_column_tag(tag)
 
 
 def reset_column_tag():
-    """Reset all column tags to zero."""
+    """Reset all column tags to zero (unknown state)."""
     update_column_tag([0 for _ in range(len(get_column_tag()))])
 
 
 def get_chunk_tag():
-    """Get current chunk tags from application state."""
+    """
+    Get current chunk tags from application state.
+
+    Returns:
+        List of chunk tag values:
+            0 = unknown
+            1 = invalid
+            2 = valid
+            3 = undecoded
+    """
     return get_app_state().get_chunk_tag()
 
 
@@ -234,7 +252,7 @@ def update_chunk_tag(tag):
     Update chunk tags in application state.
 
     Args:
-        tag: List of chunk tag values
+        tag: List of chunk tag values (0=unknown, 1=invalid, 2=valid, 3=undecoded)
     """
     get_app_state().update_chunk_tag(tag)
 
@@ -245,7 +263,7 @@ def update_single_element_chunk_tag(key, value):
 
     Args:
         key: Index of chunk to update
-        value: New tag value for the chunk
+        value: New tag value for the chunk (0=unknown, 1=invalid, 2=valid, 3=undecoded)
     """
     tag = get_chunk_tag()
     tag[key] = value
@@ -253,7 +271,7 @@ def update_single_element_chunk_tag(key, value):
 
 
 def reset_chunk_tag():
-    """Reset all chunk tags to zero."""
+    """Reset all chunk tags to zero (unknown state)."""
     update_chunk_tag([0 for _ in range(len(get_chunk_tag()))])
 
 
@@ -371,7 +389,13 @@ def calculate_column_correctness_view():
 
 
 def propagate_chunk_tag_update():
-    """Propagate chunk tag updates to all compatible plugins."""
+    """
+    Propagate chunk tag updates to all compatible plugins.
+
+    Iterates through all active plugins and updates their chunk tag state
+    to match the current application state. Only plugins compatible with
+    the current file type are updated.
+    """
     state = get_app_state()
     solver = state.get_solver()
     plugin_manager = state.get_plugin_manager()
@@ -702,8 +726,16 @@ def _no_update_tuple():
     return tuple([dash.no_update] * 15)
 
 
-def _handle_plugin_callbacks(*args, **kwargs):
-    """Handle plugin-related callback triggers."""
+def _handle_plugin_callbacks(*args: typing.Any, **kwargs: typing.Any) -> tuple:
+    """Handle plugin-related callback triggers.
+
+    Args:
+        *args: Additional positional arguments from Dash callback
+        **kwargs: Additional keyword arguments from Dash callback
+
+    Returns:
+        Callback response tuple or no_update tuple if handler not initialized
+    """
     global plugin_handler
 
     if plugin_handler is None:
@@ -796,8 +828,19 @@ def _handle_button_callbacks(trigger_id, c_ctx, packet_tag_chunk_input):
     input_callback_handler,
     prevent_initial_call=True,
 )
-def callback_handler(*args, **kwargs):
-    """Main callback handler that delegates to specialized handler classes."""
+def callback_handler(*args: typing.Any, **kwargs: typing.Any) -> tuple:
+    """Main callback handler that delegates to specialized handler classes.
+
+    Args:
+        *args: Additional positional arguments from Dash callback
+        **kwargs: Additional keyword arguments from Dash callback
+
+    Returns:
+        Callback response tuple with 15 elements
+
+    Raises:
+        RuntimeError: If handlers not initialized
+    """
     global plugin_handler, button_handler, repair_handler
 
     # Check if handlers are initialized
@@ -874,8 +917,17 @@ def recalculate_view():
     Analyzes chunk tags, identifies invalid/valid rows, calculates common packets,
     and generates the HTML view with appropriate styling for each row.
 
+    The view is regenerated based on:
+    - Current chunk tags (invalid/valid/unknown/undecoded)
+    - Common packets analysis results
+    - Unused packets filtering
+    - Column correctness indicators
+
     Returns:
-        Tuple containing view components and state information for Dash callback
+        Tuple of 3 elements:
+            - html.Div: Summary string of possible invalid packets
+            - html.Div: File view with styled chunk rows
+            - html.Div: Empty div placeholder
     """
     state = get_app_state()
     solver = state.get_solver()
@@ -954,7 +1006,21 @@ def recalculate_view():
 
 
 def _main_entry():
-    """Initialize application state and start the server."""
+    """
+    Main application entry point.
+
+    Parses command-line arguments, initializes the application state,
+    sets up callbacks and handlers, and starts the Dash development server.
+
+    Command-line Arguments:
+        ini: Path to the configuration INI file
+
+    Example:
+        python app.py eval/sleeping_beauty_RU10_w_error_correction_v1.ini
+
+    Raises:
+        SystemExit: If no INI file is provided
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("ini", metavar="ini", type=str, help="config file (ini)")
     parsed_args = parser.parse_args()
