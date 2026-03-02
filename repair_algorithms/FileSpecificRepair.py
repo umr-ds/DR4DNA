@@ -18,6 +18,15 @@ class FileSpecificRepair:
         *args,
         **kwargs,
     ):
+        """
+        Initialize FileSpecificRepair plugin.
+
+        Args:
+            semi_automatic_solver: Semi-automatic reconstruction toolkit instance
+            chunk_tag: Chunk tag list
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+        """
         self.semi_automatic_solver = semi_automatic_solver
         self.gepp = self.semi_automatic_solver.decoder.GEPP
         self.use_header_chunk = self.semi_automatic_solver.decoder.use_headerchunk
@@ -26,7 +35,7 @@ class FileSpecificRepair:
 
     def on_load(self, *args, **kwargs):
         """
-        Called when the plugin is loaded. Activates the plugin.
+        Activate the plugin when loaded.
 
         Args:
             *args: Additional positional arguments
@@ -59,6 +68,7 @@ class FileSpecificRepair:
     def is_compatible(self, *args, **kwargs):
         """
         Check if plugin is compatible with current file type.
+
         Must be implemented by subclasses.
 
         Args:

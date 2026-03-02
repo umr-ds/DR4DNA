@@ -1,3 +1,11 @@
+"""Missing row repair plugin for DR4DNA.
+
+This module provides repair functionality for DNA-encoded files with missing rows
+(packets) in the linear equation system. When the rank of the matrix is smaller
+than the number of chunks, not all chunks can be reconstructed. This plugin helps
+identify and manually fill in missing rows.
+"""
+
 import numpy as np
 
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
@@ -5,7 +13,31 @@ from repair_algorithms.PluginManager import PluginManager
 
 
 class MissingRowRepair(FileSpecificRepair):
+    """
+    Missing row repair plugin for DNA-encoded files.
+
+    This plugin handles cases where the linear equation system cannot be fully
+    solved due to missing rows (packets). It identifies missing rows and allows
+    users to manually provide content for those rows to complete the system.
+
+    Attributes:
+        error_matrix: Matrix tracking error positions
+        no_inspect_chunks: Number of chunks to inspect
+        missing_rows: Boolean array indicating missing rows
+        added_rows: List of row indices that were added
+        added_row_content: List of content for added rows
+        fill_row_content: Content to fill in a row
+        fill_row_num: Row number to fill
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the missing row repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         # if rank of matrix is smaller than the number of chunks (columns of A), then there is a missing row
         # and thus not all chunks can be reconstructed -> find the chunks by inspecting which rows in A have more than
@@ -25,10 +57,23 @@ class MissingRowRepair(FileSpecificRepair):
         self.fill_row_num = 0
 
     def parse(self, *args, **kwargs):
+        """
+        Parse and identify missing rows in the equation system.
+
+        Analyzes the GEPP result mapping to identify rows that couldn't be
+        reconstructed (marked as -1) and tags them accordingly.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with chunk_tag updates and count of missing rows
+        """
         self.missing_rows = (
             self.semi_automatic_solver.decoder.GEPP.result_mapping == -1
         ).transpose()[0]
-        for _i in range(len(self.missing_rows)):
+        for i in range(len(self.missing_rows)):
             if self.missing_rows[i]:
                 self.chunk_tag[i] = 3
             elif self.chunk_tag[i] == 3:
@@ -41,9 +86,29 @@ class MissingRowRepair(FileSpecificRepair):
         }
 
     def set_use_header(self, use_header):
+        """
+        Set whether to use header chunk for parsing.
+
+        Args:
+            use_header: Boolean indicating if header chunk should be used
+        """
         self.use_header_chunk = use_header
 
     def repair(self, *args, **kwargs):
+        """
+        Repair missing rows by adding user-provided content.
+
+        Validates the provided row content and row number, then adds the row
+        to the equation system to help solve missing chunks.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments containing fill_row_content
+                and fill_row_num
+
+        Returns:
+            Dictionary with repair results and status information
+        """
         if len(self.fill_row_content) != self.semi_automatic_solver.decoder.GEPP.b.shape[1]:
             return {
                 "refresh_view": False,
@@ -104,12 +169,29 @@ class MissingRowRepair(FileSpecificRepair):
         }
 
     def is_compatible(self, meta_info, *args, **kwargs):
+        """
+        Check if plugin is compatible with the current file state.
+
+        Args:
+            meta_info: File type metadata string
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            True if the equation system is not fully solved, False otherwise
+        """
         # only activate this module if the gepp did not fully solve the equation system
         # we could alternatively use:
         # all(self.A.sum(axis=1) == 1)
         return not self.semi_automatic_solver.decoder.GEPP.isSolved()
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the missing row repair plugin.
+
+        Returns:
+            Dictionary of UI element configurations for missing row repair
+        """
         return {
             "btn-analyze-missing-row": {
                 "type": "button",
@@ -147,6 +229,19 @@ class MissingRowRepair(FileSpecificRepair):
         }
 
     def commit_rows(self, *args, **kwargs):
+        """
+        Commit added rows to the initial GEPP matrix.
+
+        Permanently adds all manually added rows to the initial A and b matrices
+        of the semi-automatic solver.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with refresh flags and confirmation message
+        """
         for _i, row in enumerate(self.added_rows):
             added_row_a = np.zeros(
                 self.semi_automatic_solver.decoder.GEPP.A.shape[1], dtype=np.bool
@@ -174,6 +269,16 @@ class MissingRowRepair(FileSpecificRepair):
         return {"refresh_view": True, "update_b": True, "info": "Rows commited to the initial GEPP"}
 
     def update_repair_content(self, *args, **kwargs):
+        """
+        Update the fill row content from hex string input.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with status information about the update
+        """
         try:
             self.fill_row_content = bytearray.fromhex(
                 kwargs["c_ctx"].triggered[0]["value"].replace(" ", "")
@@ -193,6 +298,16 @@ class MissingRowRepair(FileSpecificRepair):
         return {"refresh_view": False, "update_b": False, "info": "Row content updated"}
 
     def update_num_repair(self, *args, **kwargs):
+        """
+        Update the row number to repair from input value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with status information about the update
+        """
         fill_row_num = kwargs["c_ctx"].triggered[0]["value"]
         if fill_row_num == "" or fill_row_num is None:
             return {
@@ -211,10 +326,25 @@ class MissingRowRepair(FileSpecificRepair):
         }
 
     def update_chunk_tag(self, chunk_tag):
+        """
+        Update chunk tags and invalidate cached error matrix.
+
+        Args:
+            chunk_tag: New chunk tag list
+        """
         super().update_chunk_tag(chunk_tag)
         self.error_matrix = None  # this could be speed-up?!
 
     def update_gepp(self, gepp):
+        """
+        Update GEPP matrix and re-parse for missing rows.
+
+        Args:
+            gepp: New GEPP instance
+
+        Returns:
+            Result from parse method
+        """
         # invalidate error matrix:
         self.gepp = gepp
         self.error_matrix = None

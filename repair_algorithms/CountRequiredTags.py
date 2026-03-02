@@ -1,12 +1,12 @@
 """
-Using the currently loaded file, this plugin analyzes the required tags (valid and invalid) for a given packet and
-stores the results in a json file.
+Using the currently loaded file, this plugin analyzes the required tags (valid and invalid) for a given packet.
 
-Running this script on its own will parse the selected json file and produce a csv in the analysis folder called
-"output_count.csv" containing the average number of possible packets for each combination of valid and invalid tags.
-This csv can be used in the script "analysis/CountRequiredAnalysis.py" for further visualization.
+The results are stored in a JSON file. Running this script on its own will parse the selected JSON file and produce a
+CSV in the analysis folder called "output_count.csv" containing the average number of possible packets for each
+combination of valid and invalid tags. This CSV can be used in the script "analysis/CountRequiredAnalysis.py" for
+further visualization.
 
-The separation of json and csv files was done to allow for easier and faster analysis of multiple files at once while
+The separation of JSON and CSV files was done to allow for easier and faster analysis of multiple files at once while
 preventing loss of raw data.
 """
 
@@ -34,6 +34,7 @@ class CountRequiredTags(FileSpecificRepair):
     """
 
     def __init__(self, *args, **kwargs):
+        """Initialize CountRequiredTags plugin."""
         super().__init__(*args, **kwargs)
         self.inspect_packet_num = 0
         self.no_permutations = 100
@@ -192,7 +193,7 @@ class CountRequiredTags(FileSpecificRepair):
         res: typing.Dict[str, typing.Any] = {}
         for i in np.arange(0, self.semi_automatic_solver.decoder.number_of_chunks):
             res[int(i)] = self.analyze_selected_packet(int(i), as_json=False)
-        with open(f"count_all.json", "w") as fp:
+        with open("count_all.json", "w") as fp:
             json.dump(res, fp)
         return res
 

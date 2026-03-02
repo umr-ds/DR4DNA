@@ -1,3 +1,10 @@
+"""Plugin manager for DR4DNA repair algorithms.
+
+This module provides a singleton plugin manager that handles registration,
+loading, and UI generation for file repair plugins. It dynamically creates
+Dash UI elements based on plugin configurations.
+"""
+
 import typing
 
 import dash_daq as daq
@@ -12,6 +19,11 @@ class PluginManager:
     """Singleton manager for plugin registration and loading."""
 
     def __init__(self):
+        """
+        Initialize the plugin manager.
+
+        Sets up empty lists for storing plugin classes and instances.
+        """
         self.plugins = []  # list of cls references! NOT instances!
         self.plugin_instances: typing.List[FileSpecificRepair] = []  # list of instances
 
@@ -43,7 +55,16 @@ class PluginManager:
         return self.plugin_instances
 
     def _create_button_element(self, key, value):
-        """Create a button UI element."""
+        """
+        Create a button UI element for a plugin.
+
+        Args:
+            key: Element identifier key
+            value: Element configuration dictionary containing 'text'
+
+        Returns:
+            Dash html.Button component
+        """
         return html.Button(
             value["text"],
             id={"type": "plugin_io_btn", "index": key},
@@ -51,7 +72,16 @@ class PluginManager:
         )
 
     def _create_int_input_element(self, key, value):
-        """Create an integer input UI element."""
+        """
+        Create an integer input UI element for a plugin.
+
+        Args:
+            key: Element identifier key
+            value: Element configuration dictionary containing 'text' and optional 'default'
+
+        Returns:
+            Dash html.Div containing input field
+        """
         default_value = 0 if "default" not in value else value["default"]
         return html.Div(
             [
@@ -72,7 +102,16 @@ class PluginManager:
         )
 
     def _create_text_input_element(self, key, value):
-        """Create a text input UI element."""
+        """
+        Create a text input UI element for a plugin.
+
+        Args:
+            key: Element identifier key
+            value: Element configuration dictionary containing 'text'
+
+        Returns:
+            Dash html.Div containing text input field
+        """
         return html.Div(
             [
                 html.Div(value["text"], className="label"),
@@ -91,7 +130,16 @@ class PluginManager:
         )
 
     def _create_upload_element(self, key, value):
-        """Create a file upload UI element."""
+        """
+        Create a file upload UI element for a plugin.
+
+        Args:
+            key: Element identifier key
+            value: Element configuration dictionary
+
+        Returns:
+            Dash html.Div containing upload component
+        """
         return html.Div(
             [
                 dcc.Upload(
@@ -114,7 +162,16 @@ class PluginManager:
         )
 
     def _create_download_element(self, key, value):
-        """Create a download UI element."""
+        """
+        Create a download UI element for a plugin.
+
+        Args:
+            key: Element identifier key
+            value: Element configuration dictionary
+
+        Returns:
+            List containing Dash download component and link
+        """
         return [
             dcc.Download(id={"type": "plugin_io_download-data", "index": key}),
             html.A(
@@ -125,7 +182,16 @@ class PluginManager:
         ]
 
     def _create_toggle_element(self, key, value):
-        """Create a toggle switch UI element."""
+        """
+        Create a toggle switch UI element for a plugin.
+
+        Args:
+            key: Element identifier key
+            value: Element configuration dictionary containing 'off_label', 'on_label', and 'label'
+
+        Returns:
+            Dash html.Div containing toggle switch
+        """
         return html.Div(
             [
                 html.Span(value["off_label"]),
@@ -140,21 +206,29 @@ class PluginManager:
         )
 
     def _check_updates_canvas(self, value):
-        """Check if element updates canvas and update global flag."""
+        """
+        Check if element updates canvas and update global flag.
+
+        Args:
+            value: Element configuration dictionary
+        """
         global show_canvas
         if "updates_canvas" in value and value["updates_canvas"]:
             show_canvas = True
 
     def _create_ui_element(self, key, value):
         """
-        Create UI element based on type.
+        Create UI element based on type specification.
+
+        Creates the appropriate Dash UI component based on the element type
+        specified in the value configuration.
 
         Args:
-            key: Element key
-            value: Element configuration dict
+            key: Element identifier key
+            value: Element configuration dictionary containing 'type' and other settings
 
         Returns:
-            UI element(s) or None for canvas type
+            Dash UI element or None for canvas type elements
         """
         element_creators = {
             "button": self._create_button_element,

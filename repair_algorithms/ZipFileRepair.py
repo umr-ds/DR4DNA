@@ -1,5 +1,12 @@
 # https://ide.kaitai.io/
 # https://kaitai.io/
+"""ZIP file repair plugin for DR4DNA.
+
+This module provides repair functionality for DNA-encoded ZIP files. It uses
+Kaitai Struct to parse ZIP file structure and identifies errors in headers,
+compression metadata, and file content.
+"""
+
 import copy
 
 # pylint: disable=invalid-name,missing-docstring,too-many-public-methods
@@ -23,6 +30,15 @@ from repair_algorithms.zip import Zip
 
 
 def inflate(data):
+    """
+    Decompress data using zlib inflate.
+
+    Args:
+        data: Compressed data bytes
+
+    Returns:
+        Decompressed data bytes
+    """
     decompress = zlib.decompressobj(-zlib.MAX_WBITS)  # see above
     inflated = decompress.decompress(data)
     inflated += decompress.flush()
@@ -30,7 +46,29 @@ def inflate(data):
 
 
 class ZipFileRepair(FileSpecificRepair):
+    """
+    ZIP file repair plugin for DNA-encoded files.
+
+    This plugin handles the repair of corrupted ZIP files encoded in DNA data
+    storage. It validates and fixes ZIP structure including local file headers,
+    central directory entries, and end of central directory records.
+
+    Attributes:
+        zip_structure: Parsed ZIP structure from Kaitai Struct
+        error_matrix: Matrix tracking error positions in the file
+        reconstructed_bmp_bytes: Reconstructed file bytes (legacy name)
+        parser_error_matrix: Matrix tracking parser-detected errors
+        reconstructed_zip_bytes: Reconstructed ZIP file bytes
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the ZIP file repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         self.zip_structure = None
         self.error_matrix = None
@@ -39,10 +77,32 @@ class ZipFileRepair(FileSpecificRepair):
         self.reconstructed_zip_bytes = None
 
     def bitwise_hamming_distance(self, a, b):
+        """
+        Calculate bitwise Hamming distance between two byte arrays.
+
+        Args:
+            a: First byte array
+            b: Second byte array
+
+        Returns:
+            Number of differing bits
+        """
         r = (1 << np.arange(8))[:, None]
         return np.count_nonzero((np.bitwise_xor(a, b) & r) != 0)
 
     def parse_zipfile(self, iterations=50):
+        """
+        Parse and validate ZIP file structure.
+
+        Attempts to parse the ZIP file from chunk data, validates the structure
+        using Kaitai Struct, and fixes common errors in ZIP headers and metadata.
+
+        Args:
+            iterations: Maximum number of parsing iterations to attempt
+
+        Returns:
+            Tuple of (parsed ZIP structure, error position list) or result from sweep_zip_header
+        """
         start = 1 if self.use_header_chunk else 0
         error_pos = [
             -1 for _ in range(len(self.gepp.b[start:].reshape(-1)))
@@ -92,9 +152,7 @@ class ZipFileRepair(FileSpecificRepair):
                     distance = {}
                     for expected in [513, 1027, 1541, 2055]:
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
-                    expected = struct.pack(
-                        "<H", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
-                    )
+                    expected = struct.pack("<H", sorted(distance.items(), key=lambda x: x[1])[0][0])
                     # replace src bytes with correct ones:
                     zip_bytes = (
                         zip_bytes[: err.io.pos() - len(expected)]
@@ -140,9 +198,7 @@ class ZipFileRepair(FileSpecificRepair):
                     distance = {}
                     for expected in range(1, 13, 1):
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
-                    expected = struct.pack(
-                        "<B", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
-                    )
+                    expected = struct.pack("<B", sorted(distance.items(), key=lambda x: x[1])[0][0])
                     # replace src bytes with correct ones:
                     zip_bytes = (
                         zip_bytes[: err.io.pos() - len(expected)]
@@ -192,10 +248,32 @@ class ZipFileRepair(FileSpecificRepair):
         return self.sweep_zip_header()
 
     def is_compatible(self, meta_info):
+        """
+        Check if plugin is compatible with the file type.
+
+        Args:
+            meta_info: File type metadata string
+
+        Returns:
+            True if file is a ZIP file, False otherwise
+        """
         # parse magic info string:
         return "zip" in meta_info.lower()
 
     def repair(self, *args, **kwargs):
+        """
+        Repair corrupt ZIP file chunks using error matrix analysis.
+
+        Identifies invalid rows from chunk tags and attempts to repair them
+        by XORing with known error differences from the error matrix.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair list, correctness function, and refresh flags
+        """
         if self.zip_structure is None or self.parser_error_matrix is None:
             self.zip_structure, self.parser_error_matrix = self.parse_zipfile()
             self.error_matrix = np.array(self.parser_error_matrix).reshape(-1, self.gepp.b.shape[1])
@@ -249,7 +327,7 @@ class ZipFileRepair(FileSpecificRepair):
                     self.semi_automatic_solver.multi_error_packets_mode,
                 )
             if repaired_content is not None:
-                lst.append((np.where(tmp_common_packets == True)[0], invalid_row, repaired_content))
+                lst.append((np.where(tmp_common_packets)[0], invalid_row, repaired_content))
         return {
             "update_b": False,
             "repair_for_each_packet": {
@@ -262,6 +340,17 @@ class ZipFileRepair(FileSpecificRepair):
         }
 
     def correctness_function(self, repaired_content, *args, **kwargs):
+        """
+        Verify if repaired content is valid by parsing with ZIP parser.
+
+        Args:
+            repaired_content: Repaired content to verify
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            True if parser finds no errors, False otherwise
+        """
         # return True if parser found NO errors,
         # return False if parser found errors
         tmpfilerepair = ZipFileRepair(self.semi_automatic_solver, chunk_tag=self.chunk_tag)
@@ -277,11 +366,34 @@ class ZipFileRepair(FileSpecificRepair):
         return res
 
     def get_raw_bytes(self, start, num_bytes):
+        """
+        Get raw bytes from GEPP matrix at specified position.
+
+        Args:
+            start: Starting byte offset
+            num_bytes: Number of bytes to retrieve
+
+        Returns:
+            Array of raw bytes
+        """
         header = 1 if self.use_header_chunk else 0
         offset = header * self.gepp.b.shape[1]
         return self.gepp.b.reshape(-1)[start + offset : start + offset + num_bytes]
 
     def find_error_region(self, *args, **kwargs):
+        """
+        Find error regions in ZIP file structure.
+
+        Parses the ZIP file and identifies error positions by comparing
+        expected and actual values in headers and content.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Error matrix reshaped to GEPP dimensions
+        """
         start = 1 if self.use_header_chunk else 0
         error_pos = [
             -1 for _ in range(len(self.gepp.b[start:].reshape(-1)))
@@ -597,11 +709,9 @@ class ZipFileRepair(FileSpecificRepair):
                         section.body.start + 8, section.body.start + 8 + 4, [0] * 4
                     )
                 if not any(
-                    [
-                        isinstance(s.body, Zip.CentralDirEntry)
-                        and s.body.start - 4 == section.body.ofs_central_dir
-                        for s in self.zip_structure.sections
-                    ]
+                    isinstance(s.body, Zip.CentralDirEntry)
+                    and s.body.start - 4 == section.body.ofs_central_dir
+                    for s in self.zip_structure.sections
                 ):
                     minium_start_of_a_central_dir = min(
                         [
@@ -680,6 +790,20 @@ class ZipFileRepair(FileSpecificRepair):
         return np.array(error_pos).reshape(-1, self.gepp.b.shape[1])
 
     def compare_sections(self, error_pos, sections):
+        """
+        Compare ZIP sections to identify and correct errors.
+
+        Compares matching LocalFile and CentralDirectoryEntry sections to
+        find inconsistencies and update error positions.
+
+        Args:
+            error_pos: Current error position list
+            sections: List of ZIP sections to compare
+
+        Returns:
+            Updated error position list
+        """
+
         def update_error_pos(
             _start, _end, new_error_pos=None, corrected_bytes=None, overwrite=False
         ):
@@ -776,11 +900,9 @@ class ZipFileRepair(FileSpecificRepair):
                             else:
                                 # error_counter += update_error_pos(section.body.header.start, section.body.header.start + 2, [0] * 2)
                                 if all(
-                                    [
-                                        i == 0
-                                        for i in error_pos[
-                                            section.body.start + 10 : section.body.start + 10 + 2
-                                        ]
+                                    i == 0
+                                    for i in error_pos[
+                                        section.body.start + 10 : section.body.start + 10 + 2
                                     ]
                                 ):
                                     error_counter += update_error_pos(
@@ -834,11 +956,9 @@ class ZipFileRepair(FileSpecificRepair):
                                 )
                             else:
                                 if all(
-                                    [
-                                        i == 0
-                                        for i in error_pos[
-                                            section.body.start + 16 : section.body.start + 16 + 4
-                                        ]
+                                    i == 0
+                                    for i in error_pos[
+                                        section.body.start + 16 : section.body.start + 16 + 4
                                     ]
                                 ):
                                     # crc of the file is treated as correct, so the error is in the cdf:
@@ -862,11 +982,9 @@ class ZipFileRepair(FileSpecificRepair):
                                 )
                             else:
                                 if all(
-                                    [
-                                        i == 0
-                                        for i in error_pos[
-                                            section.body.start + 20 : section.body.start + 20 + 4
-                                        ]
+                                    i == 0
+                                    for i in error_pos[
+                                        section.body.start + 20 : section.body.start + 20 + 4
                                     ]
                                 ):
                                     # compressed size of the file is treated as correct, so the error is in the cdf:
@@ -890,11 +1008,9 @@ class ZipFileRepair(FileSpecificRepair):
                                 )
                             else:
                                 if all(
-                                    [
-                                        i == 0
-                                        for i in error_pos[
-                                            section.body.start + 24 : section.body.start + 24 + 4
-                                        ]
+                                    i == 0
+                                    for i in error_pos[
+                                        section.body.start + 24 : section.body.start + 24 + 4
                                     ]
                                 ):
                                     # uncompressed size of the file is treated as correct, so the error is in the cdf:
@@ -920,11 +1036,9 @@ class ZipFileRepair(FileSpecificRepair):
                                 )
                             else:
                                 if all(
-                                    [
-                                        i == 0
-                                        for i in error_pos[
-                                            section.body.start + 30 : section.body.start + 30 + 2
-                                        ]
+                                    i == 0
+                                    for i in error_pos[
+                                        section.body.start + 30 : section.body.start + 30 + 2
                                     ]
                                 ):
                                     # filename len of the file is treated as correct, so the error is in the cdf:
@@ -1119,6 +1233,12 @@ class ZipFileRepair(FileSpecificRepair):
         return error_pos
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the ZIP file repair plugin.
+
+        Returns:
+            Dictionary of UI element configurations for ZIP file repair
+        """
         return {
             "kaitai-viewer": {
                 "type": "kaitai_view",
@@ -1147,6 +1267,19 @@ class ZipFileRepair(FileSpecificRepair):
         }
 
     def toogle_kaitai_viewer(self, *args, **kwargs):
+        """
+        Toggle Kaitai Struct HTML viewer visibility.
+
+        Generates Kaitai Struct HTML visualization when enabled, clears it when disabled.
+        Parses ZIP structure if not already loaded.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with kaitai_content and refresh flags
+        """
         n_clicks = kwargs["c_ctx"].triggered[0]["value"]
         if n_clicks % 2 == 1:
             if self.zip_structure is None:
@@ -1161,6 +1294,19 @@ class ZipFileRepair(FileSpecificRepair):
         return {"kaitai_content": kaitai_html, "refresh_view": False}
 
     def find_correct_rows(self, *args, **kwargs):
+        """
+        Find and tag correct rows based on error matrix analysis.
+
+        Analyzes the error matrix to identify rows with no errors and tags
+        them as correct (tag value 2).
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing optional chunk_tag
+
+        Returns:
+            Dictionary with updated chunk_tag and refresh flags
+        """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
         else:
@@ -1185,6 +1331,19 @@ class ZipFileRepair(FileSpecificRepair):
     # if the section is a local file header, check the crc32
 
     def find_incorrect_rows(self, *args, **kwargs):
+        """
+        Find and tag incorrect rows based on error matrix analysis.
+
+        Analyzes the error matrix to identify rows containing errors and tags
+        them as incorrect (tag value 1).
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing optional chunk_tag
+
+        Returns:
+            Dictionary with updated chunk_tag and refresh flags
+        """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
         else:
@@ -1202,6 +1361,18 @@ class ZipFileRepair(FileSpecificRepair):
         return {"chunk_tag": self.chunk_tag, "updates_b": False, "refresh_view": True}
 
     def find_incorrect_columns(self, *args, **kwargs):
+        """
+        Find columns with errors by counting error occurrences.
+
+        Iterates through the error matrix and counts error occurrences per column.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with column_tag counts and refresh flags
+        """
         column_tag = [0] * self.gepp.b.shape[1]
         if self.error_matrix is None:
             self.error_matrix = self.find_error_region(*args, **kwargs)
@@ -1213,15 +1384,43 @@ class ZipFileRepair(FileSpecificRepair):
         return {"column_tag": column_tag, "updates_b": False, "refresh_view": True}
 
     def update_gepp(self, gepp):
+        """
+        Update GEPP matrix (placeholder method).
+
+        Args:
+            gepp: New GEPP instance
+        """
         pass
         # update
         # self.zip_structure, error_pos = self.parse_zipfile()
         # self.error_matrix = np.array(error_pos).reshape(-1, self.gepp.b.shape[1])
 
     def update_chunk_tag(self, chunk_tag):
+        """
+        Update chunk tags (placeholder method).
+
+        Args:
+            chunk_tag: New chunk tag list
+        """
         pass
 
     def parse_section(self, zip_bytes, start_offset, error_pos, start):
+        """
+        Parse a single ZIP section from bytes at given offset.
+
+        Attempts to parse a ZIP section using Kaitai Struct, handling
+        validation errors by correcting common issues like magic bytes,
+        version fields, and date/time fields.
+
+        Args:
+            zip_bytes: Raw ZIP file bytes to parse
+            start_offset: Byte offset to start parsing from
+            error_pos: List tracking error positions
+            start: Header chunk offset (0 or 1)
+
+        Returns:
+            Tuple of (parsed section or None, updated error_pos list)
+        """
         iterations = 0
         bkp_error_pos = copy.copy(error_pos)
         while iterations < 100:
@@ -1254,9 +1453,7 @@ class ZipFileRepair(FileSpecificRepair):
                     distance = {}
                     for expected in [513, 1027, 1541, 2055]:
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
-                    expected = struct.pack(
-                        "<H", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
-                    )
+                    expected = struct.pack("<H", sorted(distance.items(), key=lambda x: x[1])[0][0])
                     # replace src bytes with correct ones:
                     zip_bytes = (
                         zip_bytes[: start_offset + err.io.pos() - len(expected)]
@@ -1309,9 +1506,7 @@ class ZipFileRepair(FileSpecificRepair):
                     distance = {}
                     for expected in range(1, 13, 1):
                         distance[expected] = self.bitwise_hamming_distance(expected, err.actual)
-                    expected = struct.pack(
-                        "<B", sorted(list(distance.items()), key=lambda x: x[1])[0][0]
-                    )
+                    expected = struct.pack("<B", sorted(distance.items(), key=lambda x: x[1])[0][0])
                     # replace src bytes with correct ones:
                     zip_bytes = (
                         zip_bytes[: err.io.pos() - len(expected)]
@@ -1364,7 +1559,7 @@ class ZipFileRepair(FileSpecificRepair):
                                 - len(expected)
                                 + i
                             ] = 1
-                        except:
+                        except Exception:
                             pass
                 else:
                     raise err
@@ -1375,26 +1570,51 @@ class ZipFileRepair(FileSpecificRepair):
         return None, error_pos
 
     def sweep_zip_header(self, error_pos=None):
+        """
+        Sweep through ZIP header to find and correct errors.
+
+        Performs a comprehensive scan of the ZIP file structure to identify
+        signature positions and parse sections, updating error positions.
+
+        Args:
+            error_pos: Optional initial error position list. If None, creates new list.
+
+        Returns:
+            Result from _finalize_sections
+        """
         start = 1 if self.use_header_chunk else 0
         if error_pos is None:
             error_pos = [
                 -1 for _ in range(len(self.gepp.b[start:].reshape(-1)))
             ]  # -1 <= unknown, 0 == correct, >=1 = incorrect
+
+        zip_bytes = self._build_zip_bytes(start)
+        signature_positions = self._find_signature_positions(zip_bytes)
+        flat_signature_positions = self._flatten_signature_positions(signature_positions)
+        sections = self._parse_sections(zip_bytes, flat_signature_positions, error_pos, start)
+
+        return self._finalize_sections(sections, error_pos, zip_bytes, start)
+
+    def _build_zip_bytes(self, start: int) -> bytes:
+        """Build zip bytes from gepp.b, handling last chunk garbage."""
         last_chunk_garbage = (
             self.gepp.b.shape[1] - self.semi_automatic_solver.headerChunk.last_chunk_length
         )
         if last_chunk_garbage > 0:
-            zip_bytes = (
+            return (
                 self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
                 .reshape(-1)[:-last_chunk_garbage]
                 .tobytes()
             )
         else:
-            zip_bytes = (
+            return (
                 self.gepp.b[start : self.semi_automatic_solver.decoder.number_of_chunks]
                 .reshape(-1)
                 .tobytes()
             )
+
+    def _find_signature_positions(self, zip_bytes: bytes) -> dict:
+        """Find positions of ZIP signatures in the bytes."""
         signature_positions = {}
         for signature in [
             rb"\x50\x4b\x01\x02",
@@ -1406,16 +1626,23 @@ class ZipFileRepair(FileSpecificRepair):
                 signature_positions[signature] = [
                     x.regs[0][0] for x in re.finditer(signature, zip_bytes)
                 ]
-            except:
+            except Exception:  # noqa: S110
                 pass
+        return signature_positions
+
+    def _flatten_signature_positions(self, signature_positions: dict) -> list:
+        """Flatten signature positions dict to sorted list."""
         # flatten the dict to list of lists:
         flat_signature_positions = sorted(
             [signature_positions[signature] for signature in signature_positions]
         )
         # flatten to single list:
-        flat_signature_positions = [
-            item for sublist in flat_signature_positions for item in sublist
-        ]
+        return [item for sublist in flat_signature_positions for item in sublist]
+
+    def _parse_sections(
+        self, zip_bytes: bytes, flat_signature_positions: list, error_pos: list, start: int
+    ) -> list:
+        """Parse sections from signature positions."""
         sections = []
         for start_offset in flat_signature_positions:
             # create a copy of error_pos for each section canididate and merge them at the end (only if the section was "valid")
@@ -1427,6 +1654,11 @@ class ZipFileRepair(FileSpecificRepair):
             sct = tmp[0]
             if sct is not None:
                 sections.append(sct)
+        return sections
+
+    def _finalize_sections(self, sections: list, error_pos: list, zip_bytes: bytes, start: int):
+        """Finalize and return sections with error positions."""
+        # Sections processing continues...
 
         # iterate over all sections to find section at location of ofs_local_header:
         for section in sections:

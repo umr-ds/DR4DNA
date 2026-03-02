@@ -6,6 +6,7 @@ This service manages plugin lifecycle, loading, and execution.
 """
 
 import importlib
+import importlib.util
 import traceback
 import typing
 from pathlib import Path
@@ -98,34 +99,53 @@ class PluginService:
                 if py_file.name.startswith("_"):
                     continue
 
-                module_name = py_file.stem
-
-                try:
-                    # Import the module
-                    spec = importlib.util.spec_from_file_location(module_name, py_file)
-                    if spec and spec.loader:
-                        module = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-
-                    # Look for plugin classes
-                    for attr_name in dir(module):
-                        attr = getattr(module, attr_name)
-                        if (
-                            isinstance(attr, type)
-                            and issubclass(attr, FileSpecificRepair)
-                            and attr is not FileSpecificRepair
-                        ):
-                            plugin_names.append(attr_name)
-                            self._plugin_classes[attr_name] = attr
-                            logger.debug(f"Discovered plugin: {attr_name}")
-
-                except Exception as e:
-                    logger.warning(f"Error discovering plugin in {py_file}: {e}")
+                plugin_names = self._discover_plugins_in_file(py_file, plugin_names)
 
             logger.info(f"Discovered {len(plugin_names)} plugins")
 
         except Exception as e:
             logger.error(f"Error discovering plugins: {e}")
+
+        return plugin_names
+
+    def _discover_plugins_in_file(self, py_file: Path, plugin_names: List[str]) -> List[str]:
+        """
+        Discover plugin classes in a single Python file.
+
+        Args:
+            py_file: Path to the Python file
+            plugin_names: Current list of discovered plugin names
+
+        Returns:
+            Updated list of plugin names
+        """
+        module_name = py_file.stem
+        module = None
+
+        try:
+            # Import the module
+            spec = importlib.util.spec_from_file_location(module_name, py_file)
+            if spec and spec.loader:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            else:
+                logger.warning(f"Could not load spec for {py_file}")
+                return plugin_names
+
+            # Look for plugin classes
+            for attr_name in dir(module):
+                attr = getattr(module, attr_name)
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, FileSpecificRepair)
+                    and attr is not FileSpecificRepair
+                ):
+                    plugin_names.append(attr_name)
+                    self._plugin_classes[attr_name] = attr
+                    logger.debug(f"Discovered plugin: {attr_name}")
+
+        except Exception as e:
+            logger.warning(f"Error discovering plugin in {py_file}: {e}")
 
         return plugin_names
 

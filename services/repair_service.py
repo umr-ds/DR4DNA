@@ -134,8 +134,8 @@ class RepairService:
 
             # Check data integrity if checksum provided
             if expected_checksum is not None:
-                chunk_data = self._gepp.b[chunk_id]
                 # Add checksum validation logic here
+                pass
 
             logger.debug(f"Validation result for chunk {chunk_id}: {result}")
             return result

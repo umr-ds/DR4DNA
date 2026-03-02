@@ -136,8 +136,8 @@ class DecoderService:
             message = "Erroneous packet detectable!"
         else:
             message = (
-                f"LES seems solvable. Either all packets are correct or the corrupt "
-                f"packet is not linear dependent in the LES."
+                "LES seems solvable. Either all packets are correct or the corrupt "
+                "packet is not linear dependent in the LES."
             )
 
         result = {

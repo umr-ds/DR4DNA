@@ -18,7 +18,34 @@ from repair_algorithms.PluginManager import PluginManager
 
 
 class BmpFileRepair(FileSpecificRepair):
+    """
+    BMP file repair plugin for DR4DNA.
+
+    This plugin handles the repair of corrupted BMP (Bitmap) image files
+    encoded in DNA data storage. It validates and fixes BMP structure
+    including headers, color tables, and pixel data.
+
+    Attributes:
+        num_repair_bytes: Number of bytes used for repair operations
+        error_matrix: Matrix tracking error positions in the file
+        parser_error_matrix: Matrix tracking parser-detected errors
+        no_inspect_chunks: Number of chunks to inspect during repair
+        width: Width of the BMP image in pixels
+        height: Height of the BMP image in pixels
+        bmp_structure: Parsed BMP structure from Kaitai Struct
+        reconstructed_bmp_bytes: Reconstructed BMP file bytes
+        image_matrix: Numpy array representation of the image
+        bmp_bytes: Original BMP file bytes
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the BMP file repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         self.num_repair_bytes = 2
         self.error_matrix = None
@@ -31,7 +58,42 @@ class BmpFileRepair(FileSpecificRepair):
         self.image_matrix = None
         self.bmp_bytes = None
 
+    def _validate_and_fix_bytes(self, start_offset, slice_obj, expected_value, error_pos):
+        """
+        Validate bytes at a specific position and fix if needed.
+
+        Compares original BMP bytes with reconstructed bytes, identifies differences,
+        and updates the error position array accordingly.
+
+        Args:
+            start_offset: Starting byte offset for error position calculation
+            slice_obj: Slice object defining the byte range to validate
+            expected_value: Expected byte value for the range
+            error_pos: Array to update with error positions
+        """
+        if self.bmp_bytes[slice_obj] != self.reconstructed_bmp_bytes[slice_obj]:
+            diff = np.array(
+                [
+                    a ^ b
+                    for a, b in zip(
+                        self.bmp_bytes[slice_obj], self.reconstructed_bmp_bytes[slice_obj]
+                    )
+                ],
+                dtype=error_pos.dtype,
+            )
+            error_pos[start_offset + slice_obj.start : start_offset + slice_obj.stop] = diff
+        self.reconstructed_bmp_bytes[slice_obj] = expected_value
+
     def parse_bmp(self, *args, **kwargs):
+        """
+        Parse and validate BMP file structure.
+
+        Attempts to parse the BMP file from chunk data, validates the structure
+        using Kaitai Struct, and fixes common errors in the BMP header.
+
+        Returns:
+            Tuple of (parsed BMP structure, error position array) or (None, None) on failure
+        """
         start = 1 if self.use_header_chunk else 0
         start_offset = start * self.semi_automatic_solver.decoder.GEPP.b.shape[1]
         error_pos = np.array(
@@ -64,63 +126,36 @@ class BmpFileRepair(FileSpecificRepair):
                 res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 # check all known parameters + all other parameters for sanity:
                 if res.file_hdr.len_file != len(self.reconstructed_bmp_bytes):
-                    self.reconstructed_bmp_bytes[2:6] = len(self.reconstructed_bmp_bytes).to_bytes(
-                        4, "little"
-                    )
-                    error_pos[start_offset + 2 : start_offset + 6] = np.array(
-                        [
-                            a ^ b
-                            for a, b in zip(self.bmp_bytes[2:6], self.reconstructed_bmp_bytes[2:6])
-                        ],
-                        dtype=error_pos.dtype,
+                    self._validate_and_fix_bytes(
+                        start_offset,
+                        slice(2, 6),
+                        len(self.reconstructed_bmp_bytes).to_bytes(4, "little"),
+                        error_pos,
                     )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 allowed_file_types = ["BM", "BA", "CI", "CP", "IC", "PT"]
                 if res.file_hdr.file_type not in allowed_file_types:
-                    self.reconstructed_bmp_bytes[0:2] = allowed_file_types[0].encode("ascii")
-                    error_pos[start_offset : start_offset + 2] = np.array(
-                        [
-                            a ^ b
-                            for a, b in zip(self.bmp_bytes[0:2], self.reconstructed_bmp_bytes[0:2])
-                        ],
-                        dtype=error_pos.dtype,
+                    self._validate_and_fix_bytes(
+                        start_offset, slice(0, 2), allowed_file_types[0].encode("ascii"), error_pos
                     )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
 
                 if res.file_hdr.reserved1 != 0:
-                    self.reconstructed_bmp_bytes[6] = 0
-                    self.reconstructed_bmp_bytes[7] = 0
-                    error_pos[start_offset + 6 : start_offset + 8] = np.array(
-                        [
-                            a ^ b
-                            for a, b in zip(self.bmp_bytes[6:8], self.reconstructed_bmp_bytes[6:8])
-                        ],
-                        dtype=error_pos.dtype,
+                    self._validate_and_fix_bytes(
+                        start_offset, slice(6, 8), bytes([0, 0]), error_pos
                     )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 if res.file_hdr.reserved2 != 0:
-                    self.reconstructed_bmp_bytes[8] = 0
-                    self.reconstructed_bmp_bytes[9] = 0
-                    error_pos[start_offset + 8 : start_offset + 9] = np.array(
-                        [
-                            a ^ b
-                            for a, b in zip(
-                                self.bmp_bytes[8:10], self.reconstructed_bmp_bytes[8:10]
-                            )
-                        ],
-                        dtype=error_pos.dtype,
+                    self._validate_and_fix_bytes(
+                        start_offset, slice(8, 10), bytes([0, 0]), error_pos
                     )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 if res.file_hdr.ofs_bitmap != res.dib_info.end:
-                    self.reconstructed_bmp_bytes[10:14] = res.dib_info.end.to_bytes(4, "little")
-                    error_pos[start_offset + 10 : start_offset + 14] = np.array(
-                        [
-                            a ^ b
-                            for a, b in zip(
-                                self.bmp_bytes[10:14], self.reconstructed_bmp_bytes[10:14]
-                            )
-                        ],
-                        dtype=error_pos.dtype,
+                    self._validate_and_fix_bytes(
+                        start_offset,
+                        slice(10, 14),
+                        res.dib_info.end.to_bytes(4, "little"),
+                        error_pos,
                     )
                     res = Bmp.from_bytes(self.reconstructed_bmp_bytes)
                 mask_mask = (
@@ -165,10 +200,29 @@ class BmpFileRepair(FileSpecificRepair):
                     return None, None
 
     def set_use_header(self, use_header):
+        """
+        Set whether to use header chunk for BMP parsing.
+
+        Args:
+            use_header: Boolean indicating if header chunk should be used
+        """
         self.use_header_chunk = use_header
 
     def repair(self, *args, **kwargs):
-        error_cols = sorted(list(self.find_incorrect_columns()), key=lambda x: x[2], reverse=True)
+        """
+        Repair corrupt rows using error column analysis.
+
+        Identifies rows matching error patterns from incorrect columns and
+        performs XOR-based repair on the first matching row.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair status, corrected row data, and refresh flags
+        """
+        error_cols = sorted(self.find_incorrect_columns(), key=lambda x: x[2], reverse=True)
         # find the row that that contains the first _no_inspect_chunks_ errors
         repair_row = -1
         diff_lst = []
@@ -205,6 +259,19 @@ class BmpFileRepair(FileSpecificRepair):
         }
 
     def reload_image(self, *args, **kwargs):
+        """
+        Reload and parse BMP image from chunk data.
+
+        Re-parses the BMP structure, initializes image dimensions and matrix,
+        and triggers error tag detection.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with image data, dimensions, and refresh flags
+        """
         self.parser_error_matrix = None
         self.no_inspect_chunks = self.gepp.b.shape[0]
         if self.reconstructed_bmp_bytes is not None:
@@ -229,10 +296,35 @@ class BmpFileRepair(FileSpecificRepair):
         }
 
     def is_compatible(self, meta_info, *args, **kwargs):
+        """
+        Check if plugin is compatible with the file type.
+
+        Args:
+            meta_info: File type metadata string
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            True if file is a BMP file, False otherwise
+        """
         # parse magic info string:
         return meta_info == "Bitmap" or "PC bitmap" in meta_info
 
     def set_image_width(self, width, *args, **kwargs):
+        """
+        Set the image width and validate against BMP structure.
+
+        Calculates expected height based on width and validates the dimensions
+        against the BMP structure. Updates shape if dimensions are valid.
+
+        Args:
+            width: New image width value
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with update status and information message
+        """
         res_str = "Reload the image first!"
         res = {"refresh_view": False}
         self.width = width[0]
@@ -252,6 +344,20 @@ class BmpFileRepair(FileSpecificRepair):
         return res
 
     def set_image_height(self, height, *args, **kwargs):
+        """
+        Set the image height and validate against BMP structure.
+
+        Calculates expected width based on height and validates the dimensions
+        against the BMP structure. Updates shape if dimensions are valid.
+
+        Args:
+            height: New image height value
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with update status and information message
+        """
         res_str = "Reload the image first!"
         res = {"refresh_view": False}
         self.height = height[1]
@@ -271,6 +377,15 @@ class BmpFileRepair(FileSpecificRepair):
         return res
 
     def update_shape(self):
+        """
+        Update BMP header with new width and height values.
+
+        Writes the current width and height values to the BMP header bytes
+        at the appropriate positions, handling negative height for top-down bitmaps.
+
+        Returns:
+            Result from find_errors_tags with updated chunk tags
+        """
         width_pos = self.bmp_structure.dib_info.header.image_width_pos
         height_pos = self.bmp_structure.dib_info.header.image_height_raw_pos
         if self.bmp_structure.dib_info.header.image_height_raw < 0:
@@ -288,6 +403,12 @@ class BmpFileRepair(FileSpecificRepair):
         return self.find_errors_tags()
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the BMP file repair plugin.
+
+        Returns:
+            Dictionary of UI element configurations for BMP file repair
+        """
         return {
             "btn-bmpfile-reload": {
                 "type": "button",
@@ -348,6 +469,18 @@ class BmpFileRepair(FileSpecificRepair):
         }
 
     def toogle_kaitai_viewer(self, *args, **kwargs):
+        """
+        Toggle Kaitai Struct HTML viewer visibility.
+
+        Generates Kaitai Struct HTML visualization when enabled, clears it when disabled.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with kaitai_content and refresh flags
+        """
         n_clicks = kwargs["c_ctx"].triggered[0]["value"]
         if n_clicks % 2 == 1:
             kaitai_html = Kaitai2Html.kaitai2html(
@@ -360,6 +493,16 @@ class BmpFileRepair(FileSpecificRepair):
         return {"kaitai_content": kaitai_html, "refresh_view": False}
 
     def update_num_repair(self, *args, **kwargs):
+        """
+        Update the number of repair bytes from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with refresh flags
+        """
         num_repair_bytes = kwargs["c_ctx"].triggered[0]["value"]
         # we could check if kwargs["c_ctx"].triggered[X] has a prop_io equal to the textbox's id
         if num_repair_bytes < 1:
@@ -370,11 +513,33 @@ class BmpFileRepair(FileSpecificRepair):
         return {"refresh_view": False, "update_b": False}
 
     def get_incorrect_columns(self, *args, **kwargs):
+        """
+        Get column tags based on incorrect column analysis.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with column_tag updates and refresh flags
+        """
         incorrect_columns = self.find_incorrect_columns()
         column_tags = [x[2] for x in incorrect_columns]
         return {"column_tag": column_tags, "updates_b": False, "refresh_view": True}
 
     def find_incorrect_columns(self, *args, **kwargs):
+        """
+        Find columns with errors using column counter analysis.
+
+        Yields columns that have error values greater than 0.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Yields:
+            Tuples of (column_index, error_diff, count, counter) for columns with errors
+        """
         column_counters = self.get_column_counter()
         for i, counter in enumerate(column_counters):
             exists_gr_zero = False
@@ -389,6 +554,19 @@ class BmpFileRepair(FileSpecificRepair):
                 yield i, 0.0, 0, counter
 
     def get_column_counter(self, *args, **kwargs):
+        """
+        Get column error counters for analysis.
+
+        Computes error matrix if not already computed, then creates
+        counters for error values in each column.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            List of Counter objects for each column's error values
+        """
         if self.error_matrix is None:
             self.error_matrix = self.find_error_regions(*args, **kwargs)
         avg_errors = []
@@ -401,10 +579,29 @@ class BmpFileRepair(FileSpecificRepair):
         return row_counters
 
     def update_chunk_tag(self, chunk_tag):
+        """
+        Update chunk tags and invalidate cached error matrix.
+
+        Args:
+            chunk_tag: New chunk tag list
+        """
         super().update_chunk_tag(chunk_tag)
         self.error_matrix = None  # this could be speed-up?!
 
     def find_error_regions(self, *args, **kwargs):
+        """
+        Find error regions by comparing original and reconstructed BMP bytes.
+
+        Calculates the XOR difference between original and reconstructed bytes
+        to identify error positions.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Reshaped error matrix
+        """
         # calculate error_matrix by looking at the difference between the original and the reconstructed image
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
         if self.parser_error_matrix is not None:
@@ -418,6 +615,19 @@ class BmpFileRepair(FileSpecificRepair):
         return pos_correct.reshape(-1, self.gepp.b.shape[1])
 
     def find_errors_tags(self, *args, **kwargs):
+        """
+        Tag chunks based on error analysis.
+
+        Analyzes the error matrix to tag each chunk as correct (2), incorrect (1),
+        or undecidable (-1).
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing optional chunk_tag
+
+        Returns:
+            Dictionary with updated chunk_tag and refresh flags
+        """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             if self.chunk_tag is None:
                 self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
@@ -447,6 +657,19 @@ class BmpFileRepair(FileSpecificRepair):
         return {"chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True}
 
     def download(self, *args, **kwargs):
+        """
+        Download the reconstructed BMP file.
+
+        Reloads the image if not already loaded, then returns the reconstructed
+        BMP bytes for download.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with download data, filename, and refresh flags
+        """
         if self.reconstructed_bmp_bytes is None:
             res = self.reload_image()
             res["download"] = bytes(self.reconstructed_bmp_bytes)
@@ -460,6 +683,12 @@ class BmpFileRepair(FileSpecificRepair):
         }
 
     def update_gepp(self, gepp):
+        """
+        Update GEPP matrix and reload BMP structure.
+
+        Args:
+            gepp: New GEPP instance
+        """
         # invalidate error matrix:
         self.gepp = gepp
         self.error_matrix = None
@@ -469,6 +698,19 @@ class BmpFileRepair(FileSpecificRepair):
         # user has to refresh the canvas!
 
     def upload_image(self, *args, **kwargs):
+        """
+        Upload and process a repaired BMP image.
+
+        Compares uploaded image with reconstructed bytes, updates error matrix
+        with differences, and triggers error tag detection.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with update status and image content
+        """
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
         content = kwargs["c_ctx"].triggered[0]["value"]
         if isinstance(content, list):
@@ -502,6 +744,20 @@ class BmpFileRepair(FileSpecificRepair):
         return {"updates_canvas": True, "image_content": content}
 
     def update_canvas(self, canvas_json, *args, **kwargs):
+        """
+        Update canvas with user-tagged error positions.
+
+        Parses canvas JSON to extract user-tagged positions and updates
+        the error matrix accordingly.
+
+        Args:
+            canvas_json: JSON string containing canvas data with tagged positions
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with canvas update flags
+        """
         # if the base image is different from what we already have, the user uploaded a new (repaired) image, act accordingly
         # if the canvas_json is different from what we already have, the user tagged the image, act accordingly
         mask = parse_jsonstring(canvas_json, shape=(self.height, self.width))
@@ -523,6 +779,20 @@ class BmpFileRepair(FileSpecificRepair):
 
 
 def parse_jsonstring(json_string, shape=None, scale=1):
+    """
+    Parse canvas JSON string to create a boolean mask.
+
+    Converts JSON-encoded canvas data containing shapes (images, paths, lines,
+    rectangles) into a numpy boolean mask marking tagged positions.
+
+    Args:
+        json_string: JSON string containing canvas object data
+        shape: Tuple of (height, width) for output mask. Defaults to (500, 500)
+        scale: Scale factor for coordinates. Defaults to 1
+
+    Returns:
+        Numpy boolean mask array with tagged positions marked as True
+    """
     if shape is None:
         shape = (500, 500)
     mask = np.zeros(shape, dtype=np.bool)

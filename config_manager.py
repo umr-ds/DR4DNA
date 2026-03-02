@@ -127,15 +127,29 @@ class AppConfig:
         """
         config = cls()
 
-        # Server config
+        config = cls._load_server_config(config)
+        config = cls._load_logging_config(config)
+        config = cls._load_plugin_config(config)
+        config = cls._load_performance_config(config)
+        config = cls._load_working_dir(config)
+        config = cls._load_feature_flags(config)
+
+        return config
+
+    @classmethod
+    def _load_server_config(cls, config: "AppConfig") -> "AppConfig":
+        """Load server configuration from environment variables."""
         if host := os.getenv("DR4DNA_SERVER_HOST"):
             config.server.host = host
         if port := os.getenv("DR4DNA_SERVER_PORT"):
             config.server.port = int(port)
         if debug := os.getenv("DR4DNA_SERVER_DEBUG"):
             config.server.debug = cls._parse_bool(debug)
+        return config
 
-        # Logging config
+    @classmethod
+    def _load_logging_config(cls, config: "AppConfig") -> "AppConfig":
+        """Load logging configuration from environment variables."""
         if level := os.getenv("DR4DNA_LOGGING_LEVEL"):
             try:
                 config.logging.level = LogLevel(level.upper())
@@ -147,33 +161,44 @@ class AppConfig:
             config.logging.log_to_file = cls._parse_bool(log_to_file)
         if log_dir := os.getenv("DR4DNA_LOGGING_DIR"):
             config.logging.log_dir = Path(log_dir)
+        return config
 
-        # Plugin config
+    @classmethod
+    def _load_plugin_config(cls, config: "AppConfig") -> "AppConfig":
+        """Load plugin configuration from environment variables."""
         if plugin_dir := os.getenv("DR4DNA_PLUGINS_DIR"):
             config.plugins.plugin_dir = Path(plugin_dir)
         if auto_load := os.getenv("DR4DNA_PLUGINS_AUTO_LOAD"):
             config.plugins.auto_load = cls._parse_bool(auto_load)
         if timeout := os.getenv("DR4DNA_PLUGINS_TIMEOUT"):
             config.plugins.timeout_seconds = int(timeout)
+        return config
 
-        # Performance config
+    @classmethod
+    def _load_performance_config(cls, config: "AppConfig") -> "AppConfig":
+        """Load performance configuration from environment variables."""
         if max_perms := os.getenv("DR4DNA_PERFORMANCE_MAX_PERMUTATIONS"):
             config.performance.max_permutations = int(max_perms)
         if cache_enabled := os.getenv("DR4DNA_PERFORMANCE_CACHE_ENABLED"):
             config.performance.cache_enabled = cls._parse_bool(cache_enabled)
         if workers := os.getenv("DR4DNA_PERFORMANCE_WORKER_THREADS"):
             config.performance.worker_threads = int(workers)
+        return config
 
-        # Working directory
+    @classmethod
+    def _load_working_dir(cls, config: "AppConfig") -> "AppConfig":
+        """Load working directory from environment variable."""
         if working_dir := os.getenv("DR4DNA_WORKING_DIR"):
             config.working_dir = Path(working_dir)
+        return config
 
-        # Feature flags
+    @classmethod
+    def _load_feature_flags(cls, config: "AppConfig") -> "AppConfig":
+        """Load feature flags from environment variables."""
         if analytics := os.getenv("DR4DNA_ENABLE_ANALYTICS"):
             config.enable_analytics = cls._parse_bool(analytics)
         if error_reporting := os.getenv("DR4DNA_ENABLE_ERROR_REPORTING"):
             config.enable_error_reporting = cls._parse_bool(error_reporting)
-
         return config
 
     @classmethod

@@ -63,6 +63,12 @@ class RepairError(DR4DNAError):
     pass
 
 
+class RepairException(RepairError):
+    """Base exception for repair-related errors (alias for RepairError)."""
+
+    pass
+
+
 class RepairValidationError(RepairError):
     """Raised when a repair operation validation fails."""
 
@@ -76,6 +82,21 @@ class NoSolutionError(DR4DNAError):
     """Raised when no solution can be found."""
 
     pass
+
+
+class DecoderException(DR4DNAError):
+    """Base exception for decoder-related errors."""
+
+    pass
+
+
+class DecodeError(DecoderException):
+    """Raised when decoding fails."""
+
+    def __init__(self, message: str, **kwargs):
+        """Initialize DecodeError with message and optional details."""
+        self.details = kwargs
+        super().__init__(message)
 
 
 class MultipleSolutionsError(DR4DNAError):
@@ -134,16 +155,20 @@ class ConfigurationError(DR4DNAError):
         super().__init__(message)
 
 
-class PluginError(DR4DNAError):
-    """Base exception for plugin-related errors."""
-
-    pass
-
-
 class PluginExecutionError(PluginError):
     """Raised when a plugin execution fails."""
 
-    pass
+    def __init__(
+        self, plugin_name: str, operation: str, original_error: Optional[Exception] = None
+    ):
+        """Initialize PluginExecutionError with plugin name, operation, and optional original error."""
+        self.plugin_name = plugin_name
+        self.operation = operation
+        self.original_error = original_error
+        message = f"Plugin execution failed: {plugin_name}.{operation}"
+        if original_error:
+            message += f" - {original_error}"
+        super().__init__(message)
 
 
 class PluginLoadError(PluginError):
@@ -152,22 +177,16 @@ class PluginLoadError(PluginError):
     pass
 
 
-class DecoderError(DR4DNAError):
-    """Base exception for decoder-related errors."""
-
-    pass
-
-
-class DecodeError(DecoderError):
-    """Raised when decoding fails."""
-
-    pass
-
-
 class FileIOException(DR4DNAError):
     """Raised when file I/O operations fail."""
 
-    pass
+    def __init__(self, message: str, filepath: Optional[str] = None):
+        """Initialize FileIOException with message and optional file path."""
+        self.filepath = filepath
+        full_message = message
+        if filepath:
+            full_message += f" (file: {filepath})"
+        super().__init__(full_message)
 
 
 class DataIntegrityError(DR4DNAError):

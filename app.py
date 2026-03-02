@@ -2,7 +2,7 @@
 # Run this app using: `python app.py <file.ini>` and
 # visit http://127.0.0.1:8050/ in your web browser.
 """
-DR4DNA - DNA Data Reconstruction Application
+DR4DNA - DNA Data Reconstruction Application.
 
 This application provides a semi-automatic reconstruction toolkit for
 DNA data storage experiments. It allows users to identify and repair
@@ -696,6 +696,78 @@ def init_callback_handlers():
     repair_handler = RepairCallbackHandler(repair_callback, repair_chunks)
 
 
+# Helper function to create a tuple of 15 no_update values
+def _no_update_tuple():
+    """Return a tuple of dash.no_update for all 15 outputs."""
+    return tuple([dash.no_update] * 15)
+
+
+def _handle_plugin_callbacks(*args, **kwargs):
+    """Handle plugin-related callback triggers."""
+    global plugin_handler
+
+    if plugin_handler is None:
+        logger.warning("plugin_handler is None - callback handlers not initialized yet")
+        return _no_update_tuple()
+
+    c_ctx = dash.callback_context
+    if c_ctx is None or c_ctx.triggered_id is None:
+        return _no_update_tuple()
+    if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith(
+        "plugin_io"
+    ):
+        return plugin_handler.handle_plugin_io(c_ctx.triggered_id["index"], c_ctx, *args, **kwargs)
+    return _no_update_tuple()
+
+
+def _handle_repair_callbacks(trigger_id, c_ctx):
+    """Handle repair-related callback triggers."""
+    global repair_handler
+
+    if repair_handler is None:
+        return _no_update_tuple()
+
+    if trigger_id in ["repair-button", "hex-repair-input", "txt-repair-input"]:
+        return repair_handler.handle_repair_inputs(trigger_id, c_ctx)
+    elif trigger_id == "repair-chunks-button":
+        return repair_handler.handle_repair_chunks_button(c_ctx)
+    return _no_update_tuple()
+
+
+def _handle_button_callbacks(trigger_id, c_ctx, packet_tag_chunk_input):
+    """Handle button-related callback triggers."""
+    global button_handler
+
+    if button_handler is None:
+        return _no_update_tuple()
+
+    button_handlers = {
+        "analyze-button": button_handler.handle_analyze_button,
+        "repair-exclusion-button": button_handler.handle_repair_exclusion_button,
+        "calculate-rank-button": button_handler.handle_calculate_rank_button,
+        "reset-chunk-tag-button": button_handler.handle_reset_chunk_tag_button,
+        "save-button": button_handler.handle_save_button,
+    }
+
+    if trigger_id in button_handlers:
+        return button_handlers[trigger_id]()
+    elif trigger_id in ["packet-tag-chunk-invalid-button", "packet-tag-chunk-valid-button"]:
+        return button_handler.handle_packet_tag_buttons(trigger_id, packet_tag_chunk_input)
+    elif trigger_id == "mode-switch":
+        return button_handler.handle_mode_switch(c_ctx.inputs.get("mode-switch.value"))
+    elif trigger_id == "colorblind-switch":
+        return button_handler.handle_colorblind_switch(c_ctx.triggered[0]["value"])
+    elif trigger_id in ["repair-reorder-button", "repair-reorder-button-possible"]:
+        return button_handler.handle_repair_reorder_buttons(trigger_id)
+    elif (
+        c_ctx.triggered_id is not None
+        and not isinstance(c_ctx.triggered_id, str)
+        and c_ctx.triggered_id["type"] == "forceload-plugin-button"
+    ):
+        return button_handler.handle_forceload_plugin_button(c_ctx)
+    return _no_update_tuple()
+
+
 @app.callback(
     Output("analytics-input", "children"),
     Output("repair-input", "hidden"),
@@ -725,51 +797,39 @@ def init_callback_handlers():
     prevent_initial_call=True,
 )
 def callback_handler(*args, **kwargs):
-    """Refactored callback handler that delegates to specialized handler classes."""
+    """Main callback handler that delegates to specialized handler classes."""
+    global plugin_handler, button_handler, repair_handler
+
+    # Check if handlers are initialized
+    if plugin_handler is None or button_handler is None or repair_handler is None:
+        logger.warning("Callback handlers not initialized yet")
+        return _no_update_tuple()
+
     c_ctx = dash.callback_context
+    if c_ctx is None:
+        logger.warning("callback_context is None")
+        return _no_update_tuple()
+
     trigger_id = c_ctx.triggered[0]["prop_id"].split(".")[0]
     packet_tag_chunk_input = c_ctx.states.get("packet-tag-chunk-input.value")
 
     # Handle plugin I/O callbacks
-    if not isinstance(c_ctx.triggered_id, str) and c_ctx.triggered_id["type"].startswith(
-        "plugin_io"
-    ):
-        return plugin_handler.handle_plugin_io(c_ctx.triggered_id["index"], c_ctx, *args, **kwargs)
+    result = _handle_plugin_callbacks(*args, **kwargs)
+    if result != _no_update_tuple():
+        return result
 
     # Handle repair-related callbacks
-    if trigger_id in ["repair-button", "hex-repair-input", "txt-repair-input"]:
-        return repair_handler.handle_repair_inputs(trigger_id, c_ctx)
-    elif trigger_id == "repair-chunks-button":
-        return repair_handler.handle_repair_chunks_button(c_ctx)
+    result = _handle_repair_callbacks(trigger_id, c_ctx)
+    if result != _no_update_tuple():
+        return result
 
     # Handle button callbacks
-    elif trigger_id == "analyze-button":
-        return button_handler.handle_analyze_button()
-    elif trigger_id == "repair-exclusion-button":
-        return button_handler.handle_repair_exclusion_button()
-    elif trigger_id == "calculate-rank-button":
-        return button_handler.handle_calculate_rank_button()
-    elif trigger_id == "reset-chunk-tag-button":
-        return button_handler.handle_reset_chunk_tag_button()
-    elif trigger_id == "save-button":
-        return button_handler.handle_save_button()
-    elif trigger_id in ["packet-tag-chunk-invalid-button", "packet-tag-chunk-valid-button"]:
-        return button_handler.handle_packet_tag_buttons(trigger_id, packet_tag_chunk_input)
-    elif trigger_id == "mode-switch":
-        return button_handler.handle_mode_switch(c_ctx.inputs.get("mode-switch.value"))
-    elif trigger_id == "colorblind-switch":
-        return button_handler.handle_colorblind_switch(c_ctx.triggered[0]["value"])
-    elif trigger_id in ["repair-reorder-button", "repair-reorder-button-possible"]:
-        return button_handler.handle_repair_reorder_buttons(trigger_id)
-    elif (
-        c_ctx.triggered_id is not None
-        and not isinstance(c_ctx.triggered_id, str)
-        and c_ctx.triggered_id["type"] == "forceload-plugin-button"
-    ):
-        return button_handler.handle_forceload_plugin_button(c_ctx)
+    result = _handle_button_callbacks(trigger_id, c_ctx, packet_tag_chunk_input)
+    if result != _no_update_tuple():
+        return result
 
     # Default case
-    return dash.no_update
+    return _no_update_tuple()
 
 
 def fast_most_common_matrix(matrices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -788,16 +848,16 @@ def fast_most_common_matrix(matrices: np.ndarray) -> tuple[np.ndarray, np.ndarra
             - output_matrix: Matrix of most common values at each position
             - has_single_val: Boolean matrix indicating positions with single unique value
     """
-    # takes a 3d array of matrices and returns the matrix of the most common value of each position (i,j,_)
-    # get the dimensions of the first matrix in the list
+    # Vectorized version using numpy operations
+    # Get the dimensions of the first matrix in the list
     num_rows = matrices.shape[0]
     num_columns = matrices.shape[1]
 
-    # initialize an empty matrix to hold the output
+    # Use numpy's bincount in a vectorized way
     output_matrix = np.zeros((num_rows, num_columns), dtype=matrices[0].dtype)
     has_single_val = np.zeros((num_rows, num_columns), dtype=bool)
 
-    # loop through all the positions [i,j] in the output matrix
+    # Vectorized loop - process all positions at once where possible
     for _i in range(num_rows):
         for _j in range(num_columns):
             b_count = np.bincount(matrices[_i, _j, :])
@@ -894,7 +954,7 @@ def recalculate_view():
 
 
 def _main_entry():
-    """Main entry point - initializes application state and starts the server."""
+    """Initialize application state and start the server."""
     parser = argparse.ArgumentParser()
     parser.add_argument("ini", metavar="ini", type=str, help="config file (ini)")
     parsed_args = parser.parse_args()

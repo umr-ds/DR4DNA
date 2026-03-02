@@ -1,25 +1,37 @@
-"""
+r"""
 This tool should allow a user to:
-1) Decode a file encoded with NOREC4DNA
-2) if there are not enough packets to decode the file, the user should get:
-    - a list of missing chunks
-    - a partial result with \x00 for missing chunks
-    - ideally a ranking of the missing chunks based on how many additional chunks could be retrived if it was present
-3) view the file (either as hex, image or as a text) and manually select corrupt chunks
-    - based on the selected chunks the tool will then suggest which packet(s) might have caused the corruption
-    - the used can then request a new decoding with the detected packet removed
+
+1. Decode a file encoded with NOREC4DNA.
+2. If there are not enough packets to decode the file, the user should get:
+   - a list of missing chunks
+   - a partial result with \x00 for missing chunks
+   - ideally a ranking of the missing chunks based on how many additional
+     chunks could be retrieved if it was present
+3. View the file (either as hex, image or as a text) and manually select
+   corrupt chunks.
+   - based on the selected chunks the tool will then suggest which packet(s)
+     might have caused the corruption
+   - the user can then request a new decoding with the detected packet removed
 
 Automatic mode:
-1) if there are multiple packets with the same packet-id (or very close hamming distance in total):
-    - the tool should try each combination of these packets
-    - if there are (multiple) checksums in the header chunks, the tool could automatically find the corrupt packets and either:
-        - remove them from the decoding because there are still enough packets left to decode the file
-        - bruteforce the corrupt chunks until the checksums match (this can be done in parallel and using believe propagation)
-2) if there is only a single packet with this id:
-    - the tool can only try to bruteforce the corrupt chunks / packets:
-        IF WE BRUTEFORCE THE CHUNK WE MIGHT HAVE A PROBLEM IF THE PACKET HAD A MUTATION AT THE START (wrong ID!)
-            we can avoid this pitfall by NOT using the chunk-mapping of the corrupt packet!
-        IF WE BRUTEFORCE THE PACKET WE CANT DIRECTLY USE THE CRC (we must always perform a belief propagation / gauss elimination) - this is slower
+
+1. If there are multiple packets with the same packet-id (or very close hamming
+   distance in total):
+   - the tool should try each combination of these packets
+   - if there are (multiple) checksums in the header chunks, the tool could
+     automatically find the corrupt packets and either:
+     - remove them from the decoding because there are still enough packets
+       left to decode the file
+     - bruteforce the corrupt chunks until the checksums match (this can be
+       done in parallel and using believe propagation)
+2. If there is only a single packet with this id:
+   - the tool can only try to bruteforce the corrupt chunks / packets:
+     IF WE BRUTEFORCE THE CHUNK WE MIGHT HAVE A PROBLEM IF THE PACKET HAD A
+     MUTATION AT THE START (wrong ID!)
+         we can avoid this pitfall by NOT using the chunk-mapping of the
+         corrupt packet!
+     IF WE BRUTEFORCE THE PACKET WE CANT DIRECTLY USE THE CRC (we must always
+     perform a belief propagation / gauss elimination) - this is slower.
 """
 import os
 import shutil
@@ -185,7 +197,7 @@ class SemiAutomaticReconstructionToolkit:
 
     def all_solutions_by_reordering(self, comm_packet, only_possible_invalid_packets=False):
         # speedup: we might want to check if the matrix is still solvable after we remove all packets that are invalid
-        mapping = dict()
+        mapping = {}
         # if only_possible_invalid_packets is True: remove all packets _i_ where comm_packets[i] is True
         if only_possible_invalid_packets:
             # count the number of True in comm_packet:
@@ -223,60 +235,54 @@ class SemiAutomaticReconstructionToolkit:
                 mapping[i] = tmp_gepp
         return mapping
 
-    def view_file_with_chunkborders(
-        self,
-        as_hex: bool = False,
-        null_is_terminator=False,
-        last_chunk_len_format: str = "I",
-        add_line_numbers=False,
-        checksum_len_format=None,
-    ):
-        """
-        shows the content of decoder.b with borders after every n-th symbol
-        """
-        self.checksum_len_format = checksum_len_format
-        self.last_chunk_len_format = last_chunk_len_format
-        if self.decoder.GEPP is not None:
-            if self.initial_A is None:
-                # create an inital backup of the GEPP
-                self.initial_A = self.decoder.GEPP.A.copy()
-                self.initial_b = self.decoder.GEPP.b.copy()
-                self.initial_packet_mapping = self.decoder.GEPP.packet_mapping.copy()
-            self.decoder.solve(partial=True)
-        dirty = False
-        self.parse_header(last_chunk_len_format, checksum_len_format=checksum_len_format)
+    def _initialize_gepp_backup(self):
+        """Create a backup of the GEPP state."""
+        self.initial_A = self.decoder.GEPP.A.copy()
+        self.initial_b = self.decoder.GEPP.b.copy()
+        self.initial_packet_mapping = self.decoder.GEPP.packet_mapping.copy()
+
+    def _get_file_name_from_header(self) -> str:
+        """Extract and validate file name from header chunk."""
         file_name = (
             "DEC_" + os.path.basename(self.decoder.file)
             if self.decoder.file is not None
             else "RU10.BIN"
         )
-        if self.headerChunk is not None:
+
+        if self.headerChunk is None:
+            return file_name
+
+        try:
             try:
-                try:
-                    file_name = self.headerChunk.get_file_name().decode("utf-8")
-                except UnicodeDecodeError:
-                    raise RuntimeError("Filename in headerchunk is not utf-8 encoded!")
-                    # file_name = self.headerChunk.get_file_name().decode("latin-1")
-                if self.headerChunk.data[-1] != 0x00:
-                    raise RuntimeError(
-                        "Headerchunk is not null terminated!"
-                        + "Either the headerchunk is corrupt or no headerchunk was used!"
-                    )
-            except RuntimeError as ex:
-                print("Warning:", ex)
-        file_name = file_name.split("\x00")[0]
+                file_name = self.headerChunk.get_file_name().decode("utf-8")
+            except UnicodeDecodeError:
+                raise RuntimeError("Filename in headerchunk is not utf-8 encoded!")
+            if self.headerChunk.data[-1] != 0x00:
+                raise RuntimeError(
+                    "Headerchunk is not null terminated!"
+                    + "Either the headerchunk is corrupt or no headerchunk was used!"
+                )
+        except RuntimeError as ex:
+            print("Warning:", ex)
+
+        return file_name.split("\x00")[0]
+
+    def _build_result_array(self, null_is_terminator: bool = False) -> list:
+        """Build the result array from GEPP mapping."""
         res = []
+        dirty = False
+
         for x in self.decoder.GEPP.result_mapping:
             if x < 0:
                 res.append(b"\x00" * len(self.decoder.GEPP.b[x][0]))
                 dirty = True
                 continue
+
             if (
                 self.decoder.number_of_chunks - 1 == x
                 and self.decoder.use_headerchunk
                 and self.headerChunk is not None
             ):
-                # to show the last chunk padding remove: " self.headerChunk.get_last_chunk_length()":
                 output = self.decoder.GEPP.b[x][0][0 : self.headerChunk.get_last_chunk_length()]
                 res.append(output)
             else:
@@ -285,28 +291,76 @@ class SemiAutomaticReconstructionToolkit:
                     output = splitter[0].encode()
                     res.append(output)
                     if len(splitter) > 1:
-                        break  # since we are in null-terminator mode, we exit once we see the first 0-byte
+                        break
                 else:
                     output = self.decoder.GEPP.b[x]
                     res.append(output)
+
         if dirty:
             print("Some parts could not be restored, file WILL contain sections with \\x00 !")
+
+        return res
+
+    def _format_line(self, line, width: int, line_index: int, add_line_numbers: bool) -> str:
+        """Format a single line for display."""
+        try:
+            line = line.tobytes()
+        except Exception:
+            pass
+
+        s1 = " ".join([f"{i:02x}" for i in line])
+        s2 = "".join([chr(i) if 32 <= i < 127 else "." for i in line])
+
+        return (
+            f"{line_index:08x} | " if add_line_numbers else ""
+        ) + f"{s1: <{width * 3}}  |{s2: <{width}}|"
+
+    def _get_line_width(self, res: list) -> int:
+        """Get the width for line formatting."""
+        try:
+            return res[0].shape[1]  # type: ignore[attr-defined]
+        except Exception:
+            return len(res[0])
+
+    def view_file_with_chunkborders(
+        self,
+        as_hex: bool = False,
+        null_is_terminator: bool = False,
+        last_chunk_len_format: str = "I",
+        add_line_numbers: bool = False,
+        checksum_len_format=None,
+    ):
+        """
+        Show the content of decoder.b with borders after every n-th symbol.
+
+        Args:
+            as_hex: Show data as hexadecimal
+            null_is_terminator: Treat null bytes as string terminators
+            last_chunk_len_format: Format string for last chunk length
+            add_line_numbers: Include line numbers in output
+            checksum_len_format: Format string for checksum length
+
+        Returns:
+            List of formatted strings representing file content
+        """
+        self.checksum_len_format = checksum_len_format
+        self.last_chunk_len_format = last_chunk_len_format
+
+        if self.decoder.GEPP is not None:
+            if self.initial_A is None:
+                self._initialize_gepp_backup()
+            self.decoder.solve(partial=True)
+
+        self.parse_header(last_chunk_len_format, checksum_len_format=checksum_len_format)
+        file_name = self._get_file_name_from_header()
+
+        res = self._build_result_array(null_is_terminator)
+        width = self._get_line_width(res)
+
         ret = []
         for j, line in enumerate(res):
-            try:
-                line = line.tobytes()  # type: ignore[attr-defined]
-            except Exception:
-                pass
-            s1 = " ".join([f"{i:02x}" for i in line])
-            try:
-                width = res[0].shape[1]  # type: ignore[attr-defined]
-            except Exception:  # if first row is not decoded, it will be of type bytes!
-                width = len(res[0])
-            s2 = "".join([chr(i) if 32 <= i < 127 else "." for i in line])
-            ret.append(
-                (f"{j:08x} | " if add_line_numbers else "")
-                + f"{s1: <{width * 3}}  |{s2: <{width}}|"
-            )
+            ret.append(self._format_line(line, width, j, add_line_numbers))
+
         return ret
 
     def get_corrupt_chunks_by_packets(self, packets, chunk_tag=None, tag_num=1):
@@ -442,16 +496,14 @@ if __name__ == "__main__":
 
     common_packets = semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows, valid_rows)
     print("potentially invalid Packets:")
-    print(" ".join(map(lambda x: "1" if x else "0", common_packets)), flush=True)
-    while np.count_nonzero(common_packets == True) > 1:
+    print(" ".join("1" if x else "0" for x in common_packets), flush=True)
+    while np.count_nonzero(common_packets) > 1:
         rem_possible_chunks = semi_automatic_solver.get_possible_invalid_chunks_from_common_packets(
             common_packets
         )
         print("possible invalid chunks:")
         print(
-            " ".join(
-                map(lambda _x: f"{_x[0]:08x}" if _x[1] else "_", enumerate(rem_possible_chunks))
-            ),
+            " ".join(f"{_x[0]:08x}" if _x[1] else "_" for _x in enumerate(rem_possible_chunks)),
             flush=True,
         )
 
@@ -474,16 +526,13 @@ if __name__ == "__main__":
         common_packets = semi_automatic_solver.decoder.GEPP.get_common_packets(
             invalid_rows, valid_rows
         )
-        print(" ".join(map(lambda _X: "1" if _X else "0", common_packets)), flush=True)
+        print(" ".join("1" if _X else "0" for _X in common_packets), flush=True)
         if len(tmp_valid_rows) == 0 and len(tmp_invalid_rows) == 0:
             break
     print("Missing chunks:")
     print(
         " ".join(
-            map(
-                lambda _x: "1" if _x else "0",
-                semi_automatic_solver.decoder.GEPP.find_missing_chunks(),
-            )
+            "1" if _x else "0" for _x in semi_automatic_solver.decoder.GEPP.find_missing_chunks()
         ),
         flush=True,
     )

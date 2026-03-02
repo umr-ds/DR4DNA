@@ -1,3 +1,10 @@
+"""Upload-based repair plugin for DR4DNA.
+
+This module provides repair functionality through manual file upload. Users can
+upload corrected versions of files and the plugin calculates the differences
+to identify and repair errors in the DNA-encoded data.
+"""
+
 import base64
 import itertools
 import typing
@@ -12,11 +19,32 @@ nonprintable = itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0))
 
 
 class UploadRepair(FileSpecificRepair):
+    """
+    Upload-based repair plugin for DNA-encoded files.
+
+    This plugin allows users to manually upload corrected file versions and
+    automatically calculates the byte-level differences to identify error
+    positions. It supports both single-file and multi-file repair scenarios.
+
+    Attributes:
+        num_repair_bytes: Number of bytes used for repair operations
+        error_matrix: Matrix tracking error positions in the file
+        file_bytes: Original file bytes
+        reconstructed_file_bytes: Reconstructed file bytes
+    """
+
     # TODO: we might want to create and save __all__ possible results for a modified chunk
     # (however, this can already be done using partial repair / multi file)
     # example: we change a byte in a (or multiple) chunk(s) and we want to decode assuming the error happening in all possible packets.
     # to further limit the number of packets we might aswell use the chunktags to pinpoint the corrupt packet!
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the upload repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         self.num_repair_bytes = 2
         self.error_matrix = None
@@ -25,6 +53,12 @@ class UploadRepair(FileSpecificRepair):
         self.load()
 
     def load(self):
+        """
+        Load and initialize file bytes from GEPP matrix.
+
+        Parses the header chunk and extracts file bytes from the GEPP b matrix,
+        handling any garbage bytes in the last chunk. Initializes the error matrix.
+        """
         start = 1 if self.use_header_chunk else 0
         self.semi_automatic_solver.parse_header("I")
         if self.semi_automatic_solver.headerChunk is not None:
@@ -51,13 +85,32 @@ class UploadRepair(FileSpecificRepair):
         self.error_matrix = np.zeros((self.gepp.b.shape[0], self.gepp.b.shape[1]), dtype=np.float32)
 
     def set_use_header(self, use_header):
+        """
+        Set whether to use header chunk for parsing.
+
+        Args:
+            use_header: Boolean indicating if header chunk should be used
+        """
         self.use_header_chunk = use_header
 
     def repair(self, *args, **kwargs):
+        """
+        Repair file errors using uploaded correction data.
+
+        Identifies rows with matching error patterns and applies XOR-based
+        corrections to repair corrupted data.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair results including corrected row and value
+        """
         # user has to tag error regions
         # and a single position (maybe multiple pixel within a chunk) with the corrected color.
         # sort the columns by the number of entries with the same value (use only the rows from the corrupt packet)::
-        error_cols = sorted(list(self.find_incorrect_columns()), key=lambda x: x[2], reverse=True)
+        error_cols = sorted(self.find_incorrect_columns(), key=lambda x: x[2], reverse=True)
         # find the row that that contains the first _no_inspect_chunks_ errors
         repair_row = -1
         diff_lst = []
@@ -94,6 +147,19 @@ class UploadRepair(FileSpecificRepair):
         }
 
     def repair_multi(self, *args, **kwargs):
+        """
+        Perform multi-file repair by calculating repair variations.
+
+        Calculates which chunks to use for each packet in common packets to repair,
+        then returns this mapping for multi-file repair scenarios.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair variations for each affected row
+        """
         # calculate which chunks to use for which packet in common_packets to repair,
         # then return this mapping to the caller
         row_to_repaired_content: typing.Dict[int, bytes] = {}
@@ -117,10 +183,25 @@ class UploadRepair(FileSpecificRepair):
         }
 
     def is_compatible(self, meta_info):
+        """
+        Check if plugin is compatible with the file type.
+
+        Args:
+            meta_info: File type metadata string
+
+        Returns:
+            True (upload repair is always possible)
+        """
         # upload (offline repair) is always possible...
         return True
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the upload repair plugin.
+
+        Returns:
+            Dictionary of UI element configurations for upload-based repair
+        """
         return {
             "btn-file-download": {
                 "type": "download",
@@ -161,6 +242,16 @@ class UploadRepair(FileSpecificRepair):
         }
 
     def update_num_repair(self, *args, **kwargs):
+        """
+        Update the number of repair bytes from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with refresh flags
+        """
         num_repair_bytes = kwargs["c_ctx"].triggered[0]["value"]
         # we could check if kwargs["c_ctx"].triggered[X] has a prop_io equal to the textbox's id
         if num_repair_bytes < 1:
@@ -171,11 +262,33 @@ class UploadRepair(FileSpecificRepair):
         return {"refresh_view": False, "update_b": False}
 
     def get_incorrect_columns(self, *args, **kwargs):
+        """
+        Get column tags based on incorrect column analysis.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with column_tag updates and refresh flags
+        """
         incorrect_columns = self.find_incorrect_columns()
         column_tags = [x[2] for x in incorrect_columns]
         return {"column_tag": column_tags, "updates_b": False, "refresh_view": True}
 
     def find_incorrect_columns(self, *args, **kwargs):
+        """
+        Find columns with errors using column counter analysis.
+
+        Yields columns that have error values greater than 0.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Yields:
+            Tuples of (column_index, error_diff, count, counter) for columns with errors
+        """
         column_counters = self.get_column_counter()
         for i, counter in enumerate(column_counters):
             exists_gr_zero = False
@@ -190,6 +303,19 @@ class UploadRepair(FileSpecificRepair):
                 yield i, 0.0, 0, counter
 
     def get_column_counter(self, *args, **kwargs):
+        """
+        Get column error counters for analysis.
+
+        Computes error matrix if not already computed, then creates
+        counters for error values in each column.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            List of Counter objects for each column's error values
+        """
         if self.error_matrix is None:
             self.error_matrix = self.find_error_regions(*args, **kwargs)
         avg_errors = []
@@ -202,10 +328,29 @@ class UploadRepair(FileSpecificRepair):
         return row_counters
 
     def update_chunk_tag(self, chunk_tag):
+        """
+        Update chunk tags and invalidate cached error matrix.
+
+        Args:
+            chunk_tag: New chunk tag list
+        """
         super().update_chunk_tag(chunk_tag)
         self.error_matrix = None  # this could be speed-up?!
 
     def find_error_regions(self, *args, **kwargs):
+        """
+        Find error regions by comparing original and reconstructed file bytes.
+
+        Calculates the XOR difference between original and reconstructed bytes
+        to identify error positions.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Reshaped error matrix
+        """
         # calculate error_matrix by looking at the difference between the original and the reconstructed image
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
         pos_correct = np.zeros(self.gepp.b.shape[0] * self.gepp.b.shape[1], dtype=np.float32)
@@ -216,6 +361,19 @@ class UploadRepair(FileSpecificRepair):
         return pos_correct.reshape(-1, self.gepp.b.shape[1])
 
     def find_errors_tags(self, *args, **kwargs):
+        """
+        Tag chunks based on error analysis.
+
+        Analyzes the error matrix to tag each chunk as correct, incorrect,
+        or undecidable.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing optional chunk_tag
+
+        Returns:
+            Dictionary with updated chunk_tag and refresh flags
+        """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
         else:
@@ -244,6 +402,16 @@ class UploadRepair(FileSpecificRepair):
         return {"chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True}
 
     def download(self, *args, **kwargs):
+        """
+        Download the reconstructed file.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with file bytes and filename for download
+        """
         return {
             "update_b": False,
             "refresh_view": False,
@@ -252,6 +420,12 @@ class UploadRepair(FileSpecificRepair):
         }
 
     def update_gepp(self, gepp):
+        """
+        Update GEPP matrix and reload file bytes.
+
+        Args:
+            gepp: New GEPP instance
+        """
         # invalidate error matrix:
         self.gepp = gepp
         self.error_matrix = None
@@ -260,6 +434,20 @@ class UploadRepair(FileSpecificRepair):
         # user has to refresh the canvas!
 
     def upload_file(self, content=None, *args, **kwargs):
+        """
+        Process uploaded file and calculate error differences.
+
+        Compares uploaded file content with reconstructed bytes to identify
+        error positions and update the error matrix.
+
+        Args:
+            content: Optional uploaded file content (base64 encoded)
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with updated chunk tags and canvas flags
+        """
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
         content = kwargs.get("c_ctx").triggered[0]["value"]
         if isinstance(content, list):

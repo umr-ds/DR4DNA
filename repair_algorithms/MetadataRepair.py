@@ -1,3 +1,11 @@
+"""Metadata repair plugin for DR4DNA.
+
+This module provides repair functionality for DNA-encoded files that contain
+metadata sequences. It handles the extraction and correction of metadata such as
+filenames, checksums, and additional payload data stored in the header and last
+chunks of DNA-encoded files.
+"""
+
 import logging
 import typing
 
@@ -16,7 +24,27 @@ logger = logging.getLogger(__name__)
 
 
 class MetadataRepair(RandomShuffleRepair):
+    """
+    Metadata repair plugin for DNA-encoded files.
+
+    This plugin handles the repair of files containing metadata sequences such as
+    filenames, checksums, and additional payload data. It identifies rows with
+    metadata, finds representative packets for groups with equal seeds, and
+    calculates corrections for header and last chunk padding.
+
+    Attributes:
+        possible_metadata_seqs: List of known metadata sequences as bytes
+        known_filename: Filename extracted from metadata header
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the metadata repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         # self.possible_metadata_seqs: typing.Dict[str, bytes] = self.load_metadata_seqs()
 
@@ -33,10 +61,19 @@ class MetadataRepair(RandomShuffleRepair):
     def load_metadata_seqs_as_bytes(
         self, filename: str = "./NOREC4DNA/wanted_meta.fasta"
     ) -> typing.List[bytes]:
+        """
+        Load metadata sequences from a FASTA file and convert to bytes.
+
+        Args:
+            filename: Path to the FASTA file containing metadata sequences
+
+        Returns:
+            List of metadata sequences as bytes
+        """
         parsed: typing.List[typing.Any] = []
         try:
             tmp = parse_metadata_file(filename)
-            parsed = set([tranlate_quat_to_byte(x) for x in tmp])
+            parsed = {tranlate_quat_to_byte(x) for x in tmp}
         except Exception as ex:
             logger.error(ex)
 
@@ -45,6 +82,19 @@ class MetadataRepair(RandomShuffleRepair):
     def find_metadata_rows(
         self, A_b_tuple: typing.Optional[typing.Tuple[numpy.ndarray, numpy.ndarray]] = None
     ) -> typing.List[typing.Tuple[int, bytes]]:
+        """
+        Find rows in the matrix that contain metadata sequences.
+
+        Searches through the b matrix rows to identify those ending with known
+        metadata sequences.
+
+        Args:
+            A_b_tuple: Optional tuple of (A, b) matrices to search. If None, uses
+                the semi-automatic solver's initial matrices.
+
+        Returns:
+            List of tuples containing (row_index, metadata_sequence) for matching rows
+        """
         if A_b_tuple is None:
             A: numpy.ndarray = self.semi_automatic_solver.initial_A.copy()
             b: numpy.ndarray = self.semi_automatic_solver.initial_b.copy()
@@ -68,11 +118,27 @@ class MetadataRepair(RandomShuffleRepair):
         return matching_sequences
 
     def set_use_header(self, use_header):
+        """
+        Set whether to use header chunk for metadata parsing.
+
+        Args:
+            use_header: Boolean indicating if header chunk should be used
+        """
         self.use_header_chunk = use_header
 
     def get_rows_with_headerchunk(
         self, A: typing.Optional[numpy.ndarray] = None
     ) -> typing.FrozenSet[int]:
+        """
+        Get row indices that contain header chunks.
+
+        Args:
+            A: Optional matrix to check. If None, uses the semi-automatic solver's
+                initial A matrix.
+
+        Returns:
+            FrozenSet of row indices containing header chunks
+        """
         if A is None:
             A: numpy.ndarray = self.semi_automatic_solver.initial_A
         return frozenset([i for i in range(A.shape[0]) if A[i, 0]])
@@ -80,6 +146,16 @@ class MetadataRepair(RandomShuffleRepair):
     def get_rows_with_lastchunk(
         self, A: typing.Optional[numpy.ndarray] = None
     ) -> typing.FrozenSet[int]:
+        """
+        Get row indices that contain last chunks.
+
+        Args:
+            A: Optional matrix to check. If None, uses the semi-automatic solver's
+                initial A matrix.
+
+        Returns:
+            FrozenSet of row indices containing last chunks
+        """
         if A is None:
             A: numpy.ndarray = self.semi_automatic_solver.initial_A
         return frozenset([i for i in range(A.shape[0]) if A[i, -1]])
@@ -87,6 +163,20 @@ class MetadataRepair(RandomShuffleRepair):
     def find_equal_seed_rows(
         self, A: typing.Optional[numpy.ndarray] = None
     ) -> typing.Set[typing.FrozenSet[int]]:
+        """
+        Find sets of rows with identical seed values (equal A rows).
+
+        Groups rows that have the same A matrix values, which indicates they
+        share the same encoding seed.
+
+        Args:
+            A: Optional matrix to check. If None, uses a copy of the semi-automatic
+                solver's initial A matrix.
+
+        Returns:
+            Set of FrozenSets, where each FrozenSet contains row indices with
+            identical seed values
+        """
         if A is None:
             A: numpy.ndarray = self.semi_automatic_solver.initial_A.copy()
         # Convert rows to tuples for hashable comparison
@@ -102,6 +192,15 @@ class MetadataRepair(RandomShuffleRepair):
         return {frozenset(indices) for indices in row_dict.values() if len(indices) > 1}
 
     def is_compatible(self, meta_info):
+        """
+        Check if plugin is compatible with the file type.
+
+        Args:
+            meta_info: File type metadata string
+
+        Returns:
+            True if file contains additional payload in header chunk, False otherwise
+        """
         return np.any(self.semi_automatic_solver.headerChunk.additional_payload)
 
     @staticmethod
@@ -109,10 +208,9 @@ class MetadataRepair(RandomShuffleRepair):
         equal_seed_rows, rows_with_headerchunk, rows_with_metadata
     ) -> typing.Generator[typing.Tuple[int, typing.FrozenSet[int], bool], None, None]:
         """
-        returns a representative for each set of equal seed rows. Only considers rows containing a header chunk.
-        @returns:
+        Return a representative for each set of equal seed rows. Only consider rows containing a header chunk.
         """
-        plain_metadata_rows = set([x[0] for x in rows_with_metadata])
+        plain_metadata_rows = {x[0] for x in rows_with_metadata}
         for row_set in equal_seed_rows:
             # only consider packets containing the header
             if len(row_set & rows_with_headerchunk) == 0:
@@ -130,91 +228,98 @@ class MetadataRepair(RandomShuffleRepair):
     @staticmethod
     def solve_and_map(gepp: GEPP_intern) -> typing.Tuple[GEPP_intern, numpy.ndarray]:
         """
-        solves the equation system and returns the full equation system including the actual header chunk if possible
+        Solve the equation system and return the full equation system including the actual header chunk if possible.
         """
+        import numpy as _np
+
         # Attempt to solve the GEPP system
         res = gepp.solve()
         # If solved ok, return gepp and a trivial identity mapping
-        try:
-            import numpy as _np
-        except Exception:
-            import numpy as _np  # fallback; keeps type-checkers/hard-to-reach code happy
-
-        # number of rows in b (used for identity mapping)
-        try:
-            n_rows = int(_np.asarray(gepp.b).shape[0])
-        except Exception:
-            n_rows = None
+        n_rows = MetadataRepair._get_row_count(gepp, _np)
 
         if res:
-            if n_rows is None:
-                return gepp, _np.array([], dtype=int)
-            return gepp, _np.arange(n_rows, dtype=int)
+            return MetadataRepair._return_identity_mapping(gepp, n_rows, _np)
 
         logger.warning(
             "Equation system was not fully solved. Trying to fix header-chunk if partial solution exists."
         )
 
-        # Safely inspect A and count how many rows contain any True entries.
-        try:
-            A = _np.asarray(gepp.A)
-            if A.ndim == 2:
-                # count rows where any element is truthy
-                num_rows_with_any = int(_np.count_nonzero(_np.any(A, axis=1)))
-            else:
-                # fallback for 1D arrays
-                num_rows_with_any = int(_np.count_nonzero(A))
-        except Exception:
-            num_rows_with_any = 0
-
         # If more than one row contains data, we might be able to fix the header chunk.
         # For now, return a safe identity mapping so callers can continue without receiving None.
+        return MetadataRepair._return_identity_mapping(gepp, n_rows, _np)
+
+    @staticmethod
+    def _get_row_count(gepp: GEPP_intern, np_module) -> typing.Optional[int]:
+        """Get the number of rows in gepp.b."""
+        try:
+            return int(np_module.asarray(gepp.b).shape[0])
+        except Exception:
+            return None
+
+    @staticmethod
+    def _return_identity_mapping(
+        gepp: GEPP_intern, n_rows: typing.Optional[int], np_module
+    ) -> typing.Tuple[GEPP_intern, numpy.ndarray]:
+        """Return gepp with an identity mapping array."""
         if n_rows is None:
-            return gepp, _np.array([], dtype=int)
-
-        if num_rows_with_any > 1:
-            return gepp, _np.arange(n_rows, dtype=int)
-
-        # Default fallback: always return gepp and an identity mapping to avoid None returns.
-        return gepp, _np.arange(n_rows, dtype=int)
+            return gepp, np_module.array([], dtype=int)
+        return gepp, np_module.arange(n_rows, dtype=int)
 
     def calculate_header_diff(self, raw_header_row) -> typing.Tuple[numpy.ndarray, bool]:
         """
-        returns the diff between the actual and expected header (if the filename is known or included in the
+        Return the diff between the actual and expected header.
+
+        Returns the diff if the filename is known or included in the header.
         """
         # Some test doubles (FakeSemi) don't provide the header format attributes used by HeaderChunk.
         # Guard against calling the HeaderChunk parser when those are missing or None.
-        if (
-            not hasattr(self.semi_automatic_solver, "last_chunk_len_format")
-            or not hasattr(self.semi_automatic_solver, "checksum_len_format")
-            or self.semi_automatic_solver.last_chunk_len_format is None
-            or self.semi_automatic_solver.checksum_len_format is None
-        ):
+        if not self._has_valid_header_format():
             logger.debug(
                 "Semi-automatic solver missing header format attributes; returning zero diff."
             )
-            try:
-                zero_diff = numpy.zeros_like(raw_header_row)
-            except Exception:
-                zero_diff = numpy.array([], dtype="uint8")
-            return zero_diff, False
+            return self._create_zero_diff(raw_header_row), False
 
         try:
-            header = HeaderChunk.from_raw_array(
-                raw_header_row,
-                last_chunk_len_format=self.semi_automatic_solver.last_chunk_len_format,
-                checksum_len_format=self.semi_automatic_solver.checksum_len_format,
-            )
+            header = self._parse_header_chunk(raw_header_row)
         except Exception as e:
             # In unexpected cases (malformed header row) return a zero diff and indicate filename not included.
             logger.warning(f"Could not parse header chunk: {e}")
-            try:
-                zero_diff = numpy.zeros_like(raw_header_row)
-            except Exception:
-                zero_diff = numpy.array([], dtype="uint8")
-            return zero_diff, False
+            return self._create_zero_diff(raw_header_row), False
 
         logger.warning(f"Got additional payload: {header.additional_payload}")
+        self._update_known_filename(header)
+        header.update_header(
+            filename=self.known_filename, checksum=header.checksum, additional_payload=b""
+        )
+        diff = xor_numpy(raw_header_row, header.data)
+        return diff, len(header.file_name) > 0
+
+    def _has_valid_header_format(self) -> bool:
+        """Check if the semi-automatic solver has valid header format attributes."""
+        return (
+            hasattr(self.semi_automatic_solver, "last_chunk_len_format")
+            and hasattr(self.semi_automatic_solver, "checksum_len_format")
+            and self.semi_automatic_solver.last_chunk_len_format is not None
+            and self.semi_automatic_solver.checksum_len_format is not None
+        )
+
+    def _create_zero_diff(self, raw_header_row) -> numpy.ndarray:
+        """Create a zero diff array matching the input shape."""
+        try:
+            return numpy.zeros_like(raw_header_row)
+        except Exception:
+            return numpy.array([], dtype="uint8")
+
+    def _parse_header_chunk(self, raw_header_row):
+        """Parse the header chunk from raw data."""
+        return HeaderChunk.from_raw_array(
+            raw_header_row,
+            last_chunk_len_format=self.semi_automatic_solver.last_chunk_len_format,
+            checksum_len_format=self.semi_automatic_solver.checksum_len_format,
+        )
+
+    def _update_known_filename(self, header):
+        """Update the known filename from the header if available."""
         if len(header.file_name) == 0:
             # TODO: check if this works as intended: if we already know the correct filename (self.known_filename)
             # we can calculate the diff between expected and actual with this info
@@ -223,12 +328,6 @@ class MetadataRepair(RandomShuffleRepair):
         if len(header.file_name) > 0:
             if self.known_filename is None:
                 self.known_filename = header.file_name
-        len(header.additional_payload)
-        header.update_header(
-            filename=self.known_filename, checksum=header.checksum, additional_payload=b""
-        )
-        diff = xor_numpy(raw_header_row, header.data)
-        return diff, len(header.file_name) > 0
 
     # idee: Berechne mittels RandomShuffleRepair alle deltas. dann berechne reparierten header für alle representanten:
     # wenn ein delta einem randomshuffle delta entspricht gibt es zwei fälle:
@@ -266,11 +365,18 @@ class MetadataRepair(RandomShuffleRepair):
         set_representatives: typing.List[typing.Tuple[int, typing.FrozenSet[int], bool]],
     ) -> typing.Tuple[np.ndarray, np.ndarray]:
         """
-        Removes all metadata-rows not designated as the representatives
-        @param sorted_A:
-        @param sorted_b:
-        @param set_representatives:
-        @returns: sorted_A, sorted_b with only one representative per metadata-packet (unique seed)
+        Remove non-representative metadata rows from matrices.
+
+        Removes all rows from sorted_A and sorted_b that are not designated as
+        representatives, keeping only one representative per metadata packet group.
+
+        Args:
+            sorted_A: Sorted A matrix
+            sorted_b: Sorted b matrix
+            set_representatives: List of tuples containing (representative_index, row_set, has_non_metadata)
+
+        Returns:
+            Tuple of (sorted_A, sorted_b) with only representatives retained
         """
         # Get all rows that should be removed (non-representatives)
         rows_to_remove: typing.Set[typing.Any] = set()
@@ -279,7 +385,7 @@ class MetadataRepair(RandomShuffleRepair):
             rows_to_remove.update(row_set - {representative})
 
         # Convert to sorted list for numpy deletion
-        rows_to_remove = sorted(list(rows_to_remove), reverse=True)
+        rows_to_remove = sorted(rows_to_remove, reverse=True)
 
         # Remove rows from both matrices
         for row in rows_to_remove:
@@ -289,13 +395,26 @@ class MetadataRepair(RandomShuffleRepair):
         return sorted_A, sorted_b
 
     def get_special_rows(self, sorted_A, sorted_b):
+        """
+        Get special row classifications for metadata repair.
+
+        Identifies and categorizes rows containing header chunks, last chunks,
+        metadata sequences, and equal seed groups.
+
+        Args:
+            sorted_A: Sorted A matrix
+            sorted_b: Sorted b matrix
+
+        Returns:
+            Tuple of (combined_rows, rows_with_metadata, equal_seed_rows, set_representatives)
+        """
         rows_with_headerchunk = self.get_rows_with_headerchunk(sorted_A)
         rows_with_lastchunk = self.get_rows_with_lastchunk(sorted_A)
         rows_with_metadata = self.find_metadata_rows((sorted_A, sorted_b))
         equal_seed_rows = self.find_equal_seed_rows(sorted_A)
         combined_rows = rows_with_headerchunk.union(rows_with_lastchunk)
         set_representatives: typing.List[typing.Tuple[int, typing.FrozenSet[int], bool]] = sorted(
-            list(self.find_representative(equal_seed_rows, combined_rows, rows_with_metadata)),
+            self.find_representative(equal_seed_rows, combined_rows, rows_with_metadata),
             key=lambda x: x[2],
             reverse=True,
         )
@@ -404,16 +523,11 @@ class MetadataRepair(RandomShuffleRepair):
                 # get all remaining (except for the first row (representative)) packets with the header-chunk
                 # that were used to decode the header:
                 if tmp_A[0, 0]:
-                    other_header_rows_included = (
-                        set(
-                            [
-                                x
-                                for x in range(len(tmp_gepp.chunk_to_used_packets[0]))
-                                if tmp_gepp.chunk_to_used_packets[0][x]
-                            ]
-                        )
-                        & special_rows
-                    )
+                    other_header_rows_included = {
+                        x
+                        for x in range(len(tmp_gepp.chunk_to_used_packets[0]))
+                        if tmp_gepp.chunk_to_used_packets[0][x]
+                    } & special_rows
                     undetermined_header_packets = other_header_rows_included - fixed_packets
                     if len(undetermined_header_packets) > 0:
                         # TODO: in its current configuration, we may have to solve such rows twice even if the other
@@ -423,8 +537,8 @@ class MetadataRepair(RandomShuffleRepair):
                             no_fully_solved.add(p)
                         no_fully_solved.add(representative)
                         logging.warning(
-                            f"Multiple metadata-packets were used to decode this header - "
-                            f"Trying to find the linear combination to solve this."
+                            "Multiple metadata-packets were used to decode this header - "
+                            "Trying to find the linear combination to solve this."
                         )
                     diff, includes_filename = self.calculate_header_diff(tmp_gepp.b[0])
                     unique_diffs.add(diff.tobytes())
@@ -442,16 +556,11 @@ class MetadataRepair(RandomShuffleRepair):
                                 f"Packet {representative} was not used to decode header chunk even though it was set as first packet!"
                             )
                 else:
-                    other_lastchunk_rows_included = (
-                        set(
-                            [
-                                x
-                                for x in range(len(tmp_gepp.chunk_to_used_packets[-1]))
-                                if tmp_gepp.chunk_to_used_packets[-1][x]
-                            ]
-                        )
-                        & special_rows
-                    )
+                    other_lastchunk_rows_included = {
+                        x
+                        for x in range(len(tmp_gepp.chunk_to_used_packets[-1]))
+                        if tmp_gepp.chunk_to_used_packets[-1][x]
+                    } & special_rows
                     undetermined_lastchunk_packets = other_lastchunk_rows_included - fixed_packets
                     if len(undetermined_lastchunk_packets) > 0:
                         # TODO: in its current configuration, we may have to solve such rows twice even if the other
@@ -461,8 +570,8 @@ class MetadataRepair(RandomShuffleRepair):
                             no_fully_solved.add(p)
                         no_fully_solved.add(representative)
                         logging.warning(
-                            f"Multiple metadata-packets were used to decode the last chunk - "
-                            f"Trying to find the linear combination to solve this."
+                            "Multiple metadata-packets were used to decode the last chunk - "
+                            "Trying to find the linear combination to solve this."
                         )
                     # Safely attempt to calculate the last-chunk padding diff. Tests and some fakes may not provide
                     # a headerChunk or the expected attributes; in that case, fall back to a zero-diff so the
@@ -523,6 +632,12 @@ class MetadataRepair(RandomShuffleRepair):
         return {"updates_b": True, "refresh_view": True}
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the metadata repair plugin.
+
+        Returns:
+            Dictionary of UI element configurations for metadata repair
+        """
         return {
             "btn-metadata-repair": {
                 "type": "button",
@@ -533,6 +648,16 @@ class MetadataRepair(RandomShuffleRepair):
         }
 
     def set_no_columns_to_repair(self, *args, **kwargs):
+        """
+        Set the number of columns to repair from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with updates_b and refresh_view flags
+        """
         try:
             self.no_columns_to_repair = int(kwargs["c_ctx"].triggered[0]["value"])
         except (ValueError, TypeError, IndexError):
@@ -540,6 +665,15 @@ class MetadataRepair(RandomShuffleRepair):
         return {"updates_b": False, "refresh_view": False}
 
     def dump_array_as_dna(self, arr: np.ndarray) -> typing.List[str]:
+        """
+        Convert numpy array to DNA sequence strings.
+
+        Args:
+            arr: Numpy array to convert
+
+        Returns:
+            List of DNA sequence strings (quaternary format)
+        """
         from norec4dna.helper.bin2Quaternary import string2QUATS
 
         return ["".join(string2QUATS(bytearray(x))) for x in arr.tolist()]

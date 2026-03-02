@@ -227,7 +227,7 @@ class Bmp(KaitaiStruct):
                 _pos = io.pos()
                 io.seek((14 + self.ofs_profile))
                 _on = self._parent.bitmap_v4_ext.color_space_type == Bmp.ColorSpace.profile_linked
-                if _on == True:
+                if _on:
                     self._m_profile_data = (
                         KaitaiStream.bytes_terminate(io.read_bytes(self.len_profile), 0, False)
                     ).decode("windows-1252")
@@ -365,17 +365,17 @@ class Bmp(KaitaiStruct):
 
         def _read(self):
             _on = self.is_core_header
-            if _on == True:
+            if _on:
                 self.image_width_pos = self.start + self._io.pos()
                 self.image_width = self._io.read_u2le()
-            elif _on == False:
+            else:
                 self.image_width_pos = self.start + self._io.pos()
                 self.image_width = self._io.read_u4le()
             _on = self.is_core_header
-            if _on == True:
+            if _on:
                 self.image_height_raw_pos = self.start + self._io.pos()
                 self.image_height_raw = self._io.read_s2le()
-            elif _on == False:
+            else:
                 self.image_height_raw_pos = self.start + self._io.pos()
                 self.image_height_raw = self._io.read_s4le()
             self.num_planes = self._io.read_u2le()

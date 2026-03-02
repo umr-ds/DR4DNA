@@ -387,7 +387,7 @@ class Png(KaitaiStruct):
                 self.bkgd = Png.BkgdGreyscale(self._io, self, self._root)
 
     class PhysChunk(KaitaiStruct):
-        """ "Physical size" chunk stores data that allows to translate
+        """Physical size chunk stores data that allows to translate
         logical pixels into physical units (meters, etc) and vice-versa.
 
         .. seealso::

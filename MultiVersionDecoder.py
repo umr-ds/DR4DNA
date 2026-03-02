@@ -85,10 +85,9 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
 
     def get_versions_in_pool(self, base_dna_version_string) -> int:
         """
-        Returns the largest version number available in the pool for the given
-        base_dna_version_string.
+        Return the largest version number available in the pool.
 
-        If no version is available, it should return 0 (base-version only).
+        If no version is available, return 0 (base-version only).
         Versions are indexed starting from 0, where version 1 is the FIRST
         version after the base version.
         """
@@ -306,10 +305,14 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
     @staticmethod
     def solve_lin_dep(a, b):
         """
-        Calculates which rows in vector a can be used to create the target b
-        @param a: a matrix , where each row is either used to create b or not
-        @param b: the target vector
-        @return: a list of rows in a that can be used to create b or None if no solution exists
+        Calculate which rows in vector a can be used to create the target b.
+
+        Args:
+            a: A matrix where each row is either used to create b or not
+            b: The target vector
+
+        Returns:
+            A list of rows in a that can be used to create b, or None if no solution exists
         """
         combs = [list(combinations(a, i)) for i in range(1, min(4, len(a) + 1))]
         for comb in combs:
@@ -325,8 +328,12 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
     def repair_and_store_by_packet(
         self, chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None
     ):
-        # this function will be used if we have multiple invalid packets (and corrected chunks) to save multiple version,
-        # where each saved version used a different possible packet to repair the chunk.
+        """
+        Repair a chunk and store the result, trying different possible corrupt packets.
+
+        This function is used when there are multiple invalid packets to save multiple versions,
+        where each saved version uses a different possible packet to repair the chunk.
+        """
         bkp_A = self.decoder.GEPP.A.copy()
         bkp_b = self.decoder.GEPP.b.copy()
         self.manual_repair(chunk_id, packet_id, hex_value)
@@ -359,6 +366,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
 
 
 def init_args() -> argparse.Namespace:
+    """Parse command-line arguments for MultiVersionDecoder."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--ini",

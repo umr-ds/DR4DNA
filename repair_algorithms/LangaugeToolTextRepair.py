@@ -27,7 +27,31 @@ lang_to_LanguageTool = {
 
 
 class LangaugeToolTextRepair(FileSpecificRepair):
+    """
+    LanguageTool-based text file repair plugin for DR4DNA.
+
+    This plugin handles the repair of corrupted text files encoded in DNA data storage.
+    It uses the LanguageTool library to detect grammatical and spelling errors,
+    identifies error positions in the DNA-encoded data, and provides repair suggestions.
+
+    Attributes:
+        replace_ae_oe_ue: Flag to replace German umlaut substitutions
+        analyzed_row: Last analyzed row number
+        error_matrix: Matrix tracking error positions in the file
+        no_inspect_chunks: Number of chunks to inspect during repair
+        tool: LanguageTool instance for language checking
+        lang: Detected language code
+        no_columns_to_repair: Number of columns to repair
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the LanguageTool text repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         self.replace_ae_oe_ue = True
         self.analyzed_row = None
@@ -79,7 +103,7 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         # Use characters of control category
         nonprintable = itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0))
         # Use translate to remove all non - printable characters
-        return text.translate({character: None for character in nonprintable})
+        return text.translate(dict.fromkeys(nonprintable, None))
 
     def detect_language(self, *args, **kwargs):
         """
@@ -382,6 +406,20 @@ class LangaugeToolTextRepair(FileSpecificRepair):
         return row_counters
 
     def repair(self, *args, **kwargs):
+        """
+        Repair text errors using language tool analysis.
+
+        Identifies and repairs the first row containing detected errors by XORing
+        with the most common error difference found in incorrect columns.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair results including corrected row and value,
+            or None if no repair could be performed
+        """
         if self.chunk_tag is None or sum(self.chunk_tag) == 0:
             self.find_error_region(*args, **kwargs)
             self.find_incorrect_rows()

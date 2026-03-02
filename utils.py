@@ -20,7 +20,7 @@ def filter_nonprintable(text: str) -> str:
         Text with non-printable characters removed
     """
     nonprintable = itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0))
-    return text.translate({character: None for character in nonprintable})
+    return text.translate(dict.fromkeys(nonprintable, None))
 
 
 def bytes_to_printable_string(data: bytes) -> str:

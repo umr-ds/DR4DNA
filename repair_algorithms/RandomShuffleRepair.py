@@ -1,3 +1,11 @@
+"""
+Random shuffle repair plugin for DR4DNA.
+
+This module provides repair functionality using random permutations of the linear
+equation system. By shuffling the order of equations and solving multiple times,
+it can identify corrupt packets through analysis of differing solutions.
+"""
+
 import typing
 from collections import Counter
 from functools import reduce
@@ -14,7 +22,33 @@ from repair_algorithms.PluginManager import PluginManager
 
 
 class RandomShuffleRepair(FileSpecificRepair):
+    """
+    Random shuffle-based repair plugin for DNA-encoded files.
+
+    This plugin uses random permutations of the linear equation system to identify
+    corrupt packets. By solving the system multiple times with different row orders,
+    it compares solutions to find inconsistencies that indicate corruption.
+
+    Attributes:
+        modified_initial_sol: Modified initial GEPP solution
+        num_shuffles: Number of random permutations to perform
+        error_matrix: Matrix tracking error positions
+        file_bytes: Original file bytes
+        reconstructed_file_bytes: Reconstructed file bytes
+        solutions: List of GEPP solutions from different permutations
+        perms: Permutations used for solutions
+        calculated_diff_set: Set of calculated differences
+        intersects: Mapping of differences to possible corrupt packets
+    """
+
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the random shuffle repair plugin.
+
+        Args:
+            *args: Positional arguments passed to parent class
+            **kwargs: Keyword arguments passed to parent class
+        """
         super().__init__(*args, **kwargs)
         self.modified_initial_sol = None
         self.num_shuffles = 5
@@ -28,6 +62,12 @@ class RandomShuffleRepair(FileSpecificRepair):
         self.intersects = None
 
     def load(self):
+        """
+        Load and initialize file bytes from GEPP matrix.
+
+        Parses the header chunk and extracts file bytes from the GEPP b matrix,
+        handling any garbage bytes in the last chunk. Initializes the error matrix.
+        """
         start = 1 if self.use_header_chunk else 0
         self.semi_automatic_solver.parse_header("I")
         if self.semi_automatic_solver.headerChunk is not None:
@@ -54,6 +94,19 @@ class RandomShuffleRepair(FileSpecificRepair):
         self.error_matrix = np.zeros((self.gepp.b.shape[0], self.gepp.b.shape[1]), dtype=np.float32)
 
     def repair(self, *args, **kwargs):
+        """
+        Repair corrupt chunks using calculated error deltas.
+
+        Uses previously calculated intersects to identify and repair corrupt packets
+        by XORing affected rows with the error delta.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair status and information
+        """
         if (
             self.solutions is None
             or self.solutions == []
@@ -63,7 +116,7 @@ class RandomShuffleRepair(FileSpecificRepair):
             or self.error_matrix is None
         ):
             return {
-                "info": f"Calculate the corrupt packet using 'Find corrupt packet by shuffling' first.",
+                "info": "Calculate the corrupt packet using 'Find corrupt packet by shuffling' first.",
                 "update_b": False,
                 "refresh_view": True,
             }
@@ -97,16 +150,29 @@ class RandomShuffleRepair(FileSpecificRepair):
                     break
         if repaired_rows == 0:
             return {
-                "info": f"Could not find a chunk matching the corrupt packet. This usually only happens if the corrupt packet was not used for any row.",
+                "info": "Could not find a chunk matching the corrupt packet. This usually only happens if the corrupt packet was not used for any row.",
                 "update_b": False,
                 "refresh_view": True,
             }
         return {"update_b": True, "refresh_view": True}
 
     def partial_repair(self, *args, **kwargs):
+        """
+        Perform partial repair for multi-file scenarios.
+
+        Attempts to repair files when multiple error deltas with multiple possible
+        corrupt packets are found. Uses constrained repair to handle ambiguity.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with repair status and information
+        """
         if self.intersects is None or len(self.intersects) == 0:
             return {
-                "info": f"Calculate the corrupt packet(s) using 'Find corrupt packet by shuffling' first.",
+                "info": "Calculate the corrupt packet(s) using 'Find corrupt packet by shuffling' first.",
                 "update_b": False,
                 "refresh_view": True,
             }
@@ -121,8 +187,8 @@ class RandomShuffleRepair(FileSpecificRepair):
             if len(self.intersects) > 1:
                 self.intersects[b"base"] = base
                 return {
-                    "info": f"Found multiple error deltas with multiple possible corrupt packets: "
-                    f"This case is not yet implemented.\nTry increasing the number of random permutations!",
+                    "info": "Found multiple error deltas with multiple possible corrupt packets: "
+                    "This case is not yet implemented.\nTry increasing the number of random permutations!",
                     "update_b": False,
                     "refresh_view": True,
                 }
@@ -136,6 +202,20 @@ class RandomShuffleRepair(FileSpecificRepair):
             return {"info": f"{res}", "update_b": False, "refresh_view": True}
 
     def generate_permutations(self, num_shuffles, input_order, include_original=True):
+        """
+        Generate random permutations of the input order.
+
+        Creates unique random permutations of the given input order for shuffling
+        the linear equation system.
+
+        Args:
+            num_shuffles: Number of permutations to generate
+            input_order: Original order to permute
+            include_original: Whether to include the original order as first permutation
+
+        Returns:
+            Numpy array of permutations
+        """
         rng = np.random.default_rng()
         offset = 1 if include_original else 0
         res = np.zeros((num_shuffles + offset, self.gepp.b.shape[0]), dtype=np.int32)
@@ -155,6 +235,15 @@ class RandomShuffleRepair(FileSpecificRepair):
         return res
 
     def calc_unique_diffs(self):
+        """
+        Calculate unique differences between solutions.
+
+        Compares all solutions to find unique byte-level differences,
+        which indicate potential error patterns.
+
+        Returns:
+            Numpy array of unique difference vectors
+        """
         unique_diffs = np.zeros(
             (1, self.semi_automatic_solver.decoder.GEPP.b.shape[1]), dtype="uint8"
         )
@@ -175,7 +264,8 @@ class RandomShuffleRepair(FileSpecificRepair):
         return unique_diffs
 
     def _process_solution_pair(self, solution, cmp_solution, sol_i, cmp_sol_i, row_to_lin_comb):
-        """Process all rows for a pair of solutions and update self.intersects.
+        """
+        Process all rows for a pair of solutions and update self.intersects.
         Extracted from the long inner loop in find_packet_shuffle to make it testable.
         """
         for row_i, row in enumerate(
@@ -201,10 +291,8 @@ class RandomShuffleRepair(FileSpecificRepair):
                 if len(self.correct_incorrect_diff_lst.shape) > 1:
                     diff_bytes = to_append
                     if not all(
-                        [
-                            np.array_equal(self.correct_incorrect_diff_lst[0], x)
-                            for x in self.correct_incorrect_diff_lst
-                        ]
+                        np.array_equal(self.correct_incorrect_diff_lst[0], x)
+                        for x in self.correct_incorrect_diff_lst
                     ):
                         # multiple different solutions -> record info (kept as in original code)
                         info_str = getattr(self, "info_str", "")
@@ -234,7 +322,8 @@ class RandomShuffleRepair(FileSpecificRepair):
                     ).tolist()
 
     def _get_packet_lists_for_row(self, solution, cmp_solution, sol_i, cmp_sol_i, row_i):
-        """Return packet lists and derived intersections for a given row comparison.
+        """
+        Return packet lists and derived intersections for a given row comparison.
         Returns: (possible_packets_sol, possible_packets_sol_cmp, possible_packets_intersect, packet_intersect_for_row)
         """
         possible_packets_sol = [
@@ -261,7 +350,8 @@ class RandomShuffleRepair(FileSpecificRepair):
     def _update_intersects_with_diff(
         self, diff_bytes_lst, possible_packets, packet_intersect_for_row
     ):
-        """Update self.intersects for a given list of diff_bytes and candidate packets.
+        """
+        Update self.intersects for a given list of diff_bytes and candidate packets.
         Mirrors the original in-place updates in _process_solution_pair.
         """
         for diff_bytes in diff_bytes_lst:
@@ -287,8 +377,14 @@ class RandomShuffleRepair(FileSpecificRepair):
 
     def sync_solution_generation(self, num_shuffles=None):
         """
-        Calculates additional solutions to achieve self.num_shuffles permutations of the LES-solutions and adds them to
-        the list of generated solutions (self.solutions) as a GEPP instance.
+        Generate additional GEPP solutions to reach the target number of shuffles.
+
+        Creates permutations of the linear equation system and solves each to
+        build a collection of solutions for comparison.
+
+        Args:
+            num_shuffles: Optional target number of shuffles. If None, uses
+                self.num_shuffles
         """
         # add initial GEPP solution:
         if num_shuffles is not None:
@@ -320,6 +416,19 @@ class RandomShuffleRepair(FileSpecificRepair):
                 self.solutions.append(tmp_gepp)
 
     def remove_lin_comb(self, unique_diffs, intersects=None):
+        """
+        Remove linear combinations from unique differences.
+
+        Identifies which difference vectors are linear combinations of others
+        and removes them to focus on independent error patterns.
+
+        Args:
+            unique_diffs: Array of unique difference vectors
+            intersects: Optional dictionary of intersects. If None, creates empty dict
+
+        Returns:
+            Tuple of (updated intersects, row_to_lin_comb mapping)
+        """
         if intersects is None:
             intersects = {}
         row_to_lin_comb = {}
@@ -340,6 +449,20 @@ class RandomShuffleRepair(FileSpecificRepair):
         return intersects, row_to_lin_comb
 
     def find_packet_shuffle(self, *args, **kwargs):
+        """
+        Find corrupt packets by analyzing shuffled solutions.
+
+        Compares multiple GEPP solutions generated from different row permutations
+        to identify packets that cause inconsistencies. Uses symmetric difference
+        analysis to pinpoint corrupt packets.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with analysis results including corrupt packet information
+        """
         self.calculated_diff_set = None
 
         self.sync_solution_generation()
@@ -377,8 +500,8 @@ class RandomShuffleRepair(FileSpecificRepair):
 
         if len(unique_diffs) > 1 and not self.semi_automatic_solver.multi_error_packets_mode:
             return {
-                "info": f"Found multiple diffs between solutions. This indicates multiple corrupt packets. "
-                f"Turn on Multi-Error Mode to find them.",
+                "info": "Found multiple diffs between solutions. This indicates multiple corrupt packets. "
+                "Turn on Multi-Error Mode to find them.",
                 "update_b": False,
                 "refresh_view": True,
             }
@@ -407,7 +530,7 @@ class RandomShuffleRepair(FileSpecificRepair):
                 )
                 # pop base if present and store for restoration; otherwise leave base None
                 base = self.intersects.pop(b"base") if b"base" in self.intersects else None
-                if all([len(x) == 0 for x in self.intersects.values()]):
+                if all(len(x) == 0 for x in self.intersects.values()):
                     if self.semi_automatic_solver.multi_error_packets_mode:
                         # In multi-error mode, continue to next solution pair instead of failing immediately
                         if base is not None:
@@ -419,7 +542,7 @@ class RandomShuffleRepair(FileSpecificRepair):
                             "update_b": False,
                             "refresh_view": True,
                         }
-                if all([len(intersect) == 1 for intersect in self.intersects.values()]):
+                if all(len(intersect) == 1 for intersect in self.intersects.values()):
                     # calculate error_matrix by iterating over all corrupt packets with their diffs
                     for packet_diff_bytes, incorrect_packet in self.intersects.items():
                         # iterate over all chunks and check if the packet was used:
@@ -477,11 +600,26 @@ class RandomShuffleRepair(FileSpecificRepair):
         return {"info": info_str, "update_b": False, "refresh_view": True}
 
     def is_compatible(self, meta_info):
+        """
+        Check if plugin is compatible with the file type.
+
+        Args:
+            meta_info: File type metadata string
+
+        Returns:
+            True if rank of augmented matrix exceeds number of chunks, False otherwise
+        """
         # upload (offline repair) is always possible...
         rank_augmented_matrix = self.semi_automatic_solver.calculate_rank_augmented_matrix()
         return rank_augmented_matrix > self.semi_automatic_solver.decoder.number_of_chunks
 
     def get_ui_elements(self):
+        """
+        Get UI elements for the random shuffle repair plugin.
+
+        Returns:
+            Dictionary of UI element configurations for shuffle-based repair
+        """
         return {
             "btn-shuffle-find-packet": {
                 "type": "button",
@@ -511,6 +649,16 @@ class RandomShuffleRepair(FileSpecificRepair):
         }
 
     def update_num_shuffle(self, *args, **kwargs):
+        """
+        Update the number of shuffles from callback value.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing c_ctx with callback context
+
+        Returns:
+            Dictionary with refresh flags
+        """
         num_shuffle = kwargs["c_ctx"].triggered[0]["value"]
         # we could check if kwargs["c_ctx"].triggered[X] has a prop_io equal to the textbox's id
         if num_shuffle is None or num_shuffle < 1:
@@ -521,11 +669,33 @@ class RandomShuffleRepair(FileSpecificRepair):
         return {"refresh_view": False, "update_b": False}
 
     def get_incorrect_columns(self, *args, **kwargs):
+        """
+        Get column tags based on incorrect column analysis.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Dictionary with column_tag updates and refresh flags
+        """
         incorrect_columns = self.find_incorrect_columns()
         column_tags = [x[2] for x in incorrect_columns]
         return {"column_tag": column_tags, "updates_b": False, "refresh_view": True}
 
     def find_incorrect_columns(self, *args, **kwargs):
+        """
+        Find columns with errors using column counter analysis.
+
+        Yields columns that have error values greater than 0.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Yields:
+            Tuples of (column_index, error_diff, count, counter) for columns with errors
+        """
         column_counters = self.get_column_counter()
         for i, counter in enumerate(column_counters):
             exists_gr_zero = False
@@ -540,6 +710,19 @@ class RandomShuffleRepair(FileSpecificRepair):
                 yield i, 0.0, 0, counter
 
     def get_column_counter(self, *args, **kwargs):
+        """
+        Get column error counters for analysis.
+
+        Computes error matrix if not already computed, then creates
+        counters for error values in each column.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            List of Counter objects for each column's error values
+        """
         if self.error_matrix is None:
             self.error_matrix = self.find_error_regions(*args, **kwargs)
         avg_errors = []
@@ -552,10 +735,29 @@ class RandomShuffleRepair(FileSpecificRepair):
         return row_counters
 
     def update_chunk_tag(self, chunk_tag):
+        """
+        Update chunk tags and invalidate cached error matrix.
+
+        Args:
+            chunk_tag: New chunk tag list
+        """
         super().update_chunk_tag(chunk_tag)
         self.error_matrix = None  # this could be speed-up?!
 
     def find_error_regions(self, *args, **kwargs):
+        """
+        Find error regions by comparing original and reconstructed file bytes.
+
+        Calculates the XOR difference between original and reconstructed bytes
+        to identify error positions.
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+
+        Returns:
+            Reshaped error matrix
+        """
         # calculate error_matrix by looking at the difference between the original and the reconstructed image
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
         pos_correct = np.zeros(self.gepp.b.shape[0] * self.gepp.b.shape[1], dtype=np.float32)
@@ -566,6 +768,19 @@ class RandomShuffleRepair(FileSpecificRepair):
         return pos_correct.reshape(-1, self.gepp.b.shape[1])
 
     def find_errors_tags(self, *args, **kwargs):
+        """
+        Tag chunks based on error analysis.
+
+        Analyzes the error matrix to tag each chunk as correct (2), incorrect (1),
+        or undecidable (-1).
+
+        Args:
+            *args: Additional positional arguments
+            **kwargs: Keyword arguments containing optional chunk_tag
+
+        Returns:
+            Dictionary with updated chunk_tag and refresh flags
+        """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
         else:
@@ -594,13 +809,20 @@ class RandomShuffleRepair(FileSpecificRepair):
         return {"chunk_tag": self.chunk_tag, "update_b": False, "refresh_view": True}
 
     def update_gepp(self, gepp):
+        """
+        Update GEPP matrix and reload file bytes.
+
+        Args:
+            gepp: New GEPP instance
+        """
         # invalidate error matrix:
         self.gepp = gepp
         self.error_matrix = None
         self.load()
 
     def _build_modified_initial_solution(self):
-        """Construct a modified initial GEPP solution where rows with all-zero A are zeroed in b and chunk_to_used_packets.
+        """
+        Construct a modified initial GEPP solution where rows with all-zero A are zeroed in b and chunk_to_used_packets.
         This mirrors the behavior used in find_packet_shuffle and is extracted for testing.
         """
         self.modified_initial_sol = GEPP(self.solutions[0].A, self.solutions[0].b)
@@ -608,7 +830,7 @@ class RandomShuffleRepair(FileSpecificRepair):
             0
         ].chunk_to_used_packets.copy()
         for i, row in enumerate(self.modified_initial_sol.A):
-            if np.all(row == False):
+            if np.all(row == 0):
                 # zero out b and chunk_to_used_packets for rows that are all zero in A
                 self.modified_initial_sol.b[i] = np.zeros_like(self.modified_initial_sol.b[i])
                 self.modified_initial_sol.chunk_to_used_packets[i] = np.zeros_like(

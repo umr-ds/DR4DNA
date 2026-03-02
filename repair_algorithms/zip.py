@@ -307,13 +307,13 @@ class Zip(KaitaiStruct):
                 if self.flags.has_access_time:
                     try:
                         self.access_time = self._io.read_u4le()
-                    except:
+                    except EOFError:
                         self.access_time = self.mod_time
 
                 if self.flags.has_create_time:
                     try:
                         self.create_time = self._io.read_u4le()
-                    except:
+                    except EOFError:
                         if hasattr(self, "mod_time"):
                             self.create_time = self.mod_time
                         else:
@@ -376,7 +376,7 @@ class Zip(KaitaiStruct):
                     input_bytes,
                 ).group(0)
             )
-        except:
+        except Exception:
             res = None
         return res
 

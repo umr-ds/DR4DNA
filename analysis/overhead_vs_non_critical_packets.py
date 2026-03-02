@@ -1,6 +1,7 @@
 """
-Plot the required overhead vs the non-critical packets using multiple csv-files as input (merged)
-It uses the output of "norec_analysis.py" as the input!
+Plot the required overhead vs the non-critical packets using multiple CSV files as input (merged).
+
+It uses the output of "norec_analysis.py" as the input.
 """
 
 import matplotlib.pyplot as plt

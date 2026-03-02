@@ -32,32 +32,15 @@ def clear_errors():
 
 
 def callbacks(app):
-    """
-    @app.callback(Output('dashCanvas', 'lineColor'),
-                  Input('color-picker', 'value'))
-    def update_canvas_linecolor(value):
-        if isinstance(value, dict):
-            return value['hex']
-        else:
-            return value
-    """
-    """
-    @app.callback(output=[Output('dashCanvas', 'image_content'), Output('dashCanvas', 'json_data')],
-                  inputs=[Input({'type': 'plugin_io_btn', 'index': ALL}, 'n_clicks'),
-                          Input({'type': 'output-data-upload', 'index': ALL}, 'value'),
-                          State('dashCanvas', 'image_content'),
-                          State('dashCanvas', 'json_data')],
-                  prevent_inital_call=True)
-    def canvas_callback_handler(*args, **kwargs):
-        print("canvas_callback_handler", args, kwargs)
-        return [None, None]
-    """
-    """
-    @app.callback(Output('dashCanvas', 'lineWidth'),
-                  Input('bg-width-slider', 'value'))
-    def update_canvas_linewidth(value):
-        return value
-    """
+    """Register all Dash callbacks for the application."""
+    _register_upload_callback(app)
+    _register_error_check_callback(app)
+    _register_error_notification_callback(app)
+    _register_close_error_callback(app)
+
+
+def _register_upload_callback(app):
+    """Register callback for file upload handling."""
 
     @app.callback(
         Output({"type": "dashCanvas", "index": MATCH}, "width"),
@@ -73,13 +56,18 @@ def callbacks(app):
             # zip(list_of_contents, list_of_names, list_of_dates)]
             return children
 
-    # Hidden store for error messages
+
+def _register_error_check_callback(app):
+    """Register callback for periodic error checking."""
+
     @app.callback(Output("error-store", "data"), Input("interval-component", "n_intervals"))
     def check_for_errors(n_intervals):
         """Periodically check for errors and update the store."""
-        from app_callbacks import get_error_store
-
         return get_error_store()[-5:]  # Return last 5 errors
+
+
+def _register_error_notification_callback(app):
+    """Register callback for displaying error notifications."""
 
     @app.callback(
         Output("error-notification-container", "children"),
@@ -110,6 +98,10 @@ def callbacks(app):
             notifications.append(notification)
 
         return notifications
+
+
+def _register_close_error_callback(app):
+    """Register callback for closing error notifications."""
 
     @app.callback(
         Output("error-store", "data", allow_duplicate=True),

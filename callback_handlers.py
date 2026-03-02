@@ -100,8 +100,7 @@ class CallbackResponse:
             )
         return (
             (self.info_str,)
-            + self.create_no_update_tuple(11)
-            + (self.canvas_image_content, self.kaitai_view)
+            + self.create_no_update_tuple(13)
         )
 
 
@@ -198,7 +197,9 @@ class PluginCallbackHandler:
             Callback response tuple
         """
         chunk_tag = self.get_chunk_tag()
-        res = value["callback"](chunk_tag=chunk_tag, c_ctx=c_ctx, *args, **kwargs)
+        callback_kwargs = {"c_ctx": c_ctx, "chunk_tag": chunk_tag}
+        callback_kwargs.update(kwargs)
+        res = value["callback"](*args, **callback_kwargs)
 
         # Check for special "repair" handler
         special_return = self._process_plugin_response(res, response)

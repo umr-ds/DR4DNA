@@ -169,7 +169,7 @@ def get_logger(name: str) -> logging.Logger:
 
 def log_function_call(logger: Optional[logging.Logger] = None):
     """
-    Decorator to log function calls and their execution time.
+    Log function calls and their execution time.
 
     Usage:
         @log_function_call
