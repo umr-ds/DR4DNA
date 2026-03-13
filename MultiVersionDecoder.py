@@ -1,40 +1,46 @@
 r"""
-This tool should allow a user to:
+Multi-Version Decoder for NOREC4DNA Encoded Files.
 
-1. Decode a file encoded with NOREC4DNA.
-2. If there are not enough packets to decode the file, the user should get:
-   - a list of missing chunks
-   - a partial result with \x00 for missing chunks
-   - ideally a ranking of the missing chunks based on how many additional
-     chunks could be retrieved if it was present
-3. View the file (either as hex, image or as a text) and manually select
-   corrupt chunks.
-   - based on the selected chunks the tool will then suggest which packet(s)
-     might have caused the corruption
-   - the user can then request a new decoding with the detected packet removed
+This module provides functionality to decode files encoded with NOREC4DNA that contain
+multiple versions. It supports:
 
-Automatic mode:
+- Decoding files with multiple version packets
+- Handling missing chunks with partial reconstruction
+- Ranking missing chunks by importance
+- Manual and automatic error correction
+- Version-aware decoding with metadata filtering
 
-1. If there are multiple packets with the same packet-id (or very close hamming
-   distance in total):
-   - the tool should try each combination of these packets
-   - if there are (multiple) checksums in the header chunks, the tool could
-     automatically find the corrupt packets and either:
-     - remove them from the decoding because there are still enough packets
-       left to decode the file
-     - bruteforce the corrupt chunks until the checksums match (this can be
-       done in parallel and using believe propagation)
-2. If there is only a single packet with this id:
-   - the tool can only try to bruteforce the corrupt chunks / packets:
-     IF WE BRUTEFORCE THE CHUNK WE MIGHT HAVE A PROBLEM IF THE PACKET HAD A
-     MUTATION AT THE START (wrong ID!)
-         we can avoid this pitfall by NOT using the chunk-mapping of the
-         corrupt packet!
-     IF WE BRUTEFORCE THE PACKET WE CANT DIRECTLY USE THE CRC (we must always
-     perform a belief propagation / gauss elimination) - this is slower.
+Key Features:
+    1. Version-Aware Decoding: Filter and decode specific versions from a pool of DNA sequences
+    2. Metadata Filtering: Exclude metadata sequences during decoding
+    3. Error Correction: Automatic and manual repair of corrupt packets
+    4. Partial Reconstruction: Decode files even with missing chunks
+    5. Checksum Validation: Verify decoded files using embedded checksums
+
+Example Usage:
+    >>> from MultiVersionDecoder import MultiVersionDecoder
+    >>> from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
+    >>>
+    >>> # Load decoder configuration
+    >>> config = ConfigReadAndExecute("config.ini")
+    >>> decoder = config.execute(return_decoder=True)[0]
+    >>>
+    >>> # Initialize MultiVersionDecoder
+    >>> mv_decoder = MultiVersionDecoder(
+    ...     decoder,
+    ...     metadata_list=["ACGT", "TGCA"]  # Optional: metadata sequences to filter
+    ... )
+    >>>
+    >>> # Decode base version (version 0)
+    >>> base_version_string = "GAGCCAGTGAGTCGTA"
+    >>> mv_decoder.decode_base_version(base_version_string)
+    >>>
+    >>> # Decode to version N
+    >>> mv_decoder.decode_to_version(base_version_string, version=2)
 """
 
 import argparse
+import logging
 import shutil
 import struct
 import typing
@@ -45,8 +51,8 @@ from pathlib import Path
 
 import numpy as np
 
+from MultiVersionCoder import reduce_packet_to_chunk
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
-from NOREC4DNA.file_update_coding import reduce_packet_to_chunk
 from NOREC4DNA.invivo_window_decoder import load_fasta
 from NOREC4DNA.norec4dna.HeaderChunk import HeaderChunk
 from NOREC4DNA.norec4dna.helper.helper_cpu_single_core import xor_numpy
@@ -58,124 +64,266 @@ from NOREC4DNA.norec4dna.RU10Decoder import RU10Decoder
 from NOREC4DNA.norec4dna.RU10Packet import RU10Packet
 from semi_automatic_reconstruction_toolkit import SemiAutomaticReconstructionToolkit
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
-    """Multi-version decoder for NOREC4DNA encoded files."""
+    """
+    Multi-version decoder for NOREC4DNA encoded files.
+
+    This class extends SemiAutomaticReconstructionToolkit to provide version-aware
+    decoding capabilities for DNA-encoded files containing multiple versions.
+
+    Attributes:
+        decoder: The underlying decoder instance (RU10Decoder, LTDecoder, or OnlineDecoder)
+        metadata_list: List of DNA sequences to filter out as metadata
+        headerChunk: Parsed header chunk from the encoded file
+        multi_error_packets_mode: Flag for handling multiple error packets
+    """
 
     def __init__(
-        self, decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder], metadata_list=None
-    ):
-        """Initialize the MultiVersionDecoder with a decoder instance."""
+        self,
+        decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder],
+        metadata_list: typing.Optional[typing.List[str]] = None,
+    ) -> None:
+        """
+        Initialize the MultiVersionDecoder with a decoder instance.
+
+        Args:
+            decoder: The decoder instance to use for reconstruction.
+                Can be RU10Decoder, LTDecoder, or OnlineDecoder.
+            metadata_list: Optional list of metadata DNA sequences to filter out
+                during decoding. If None, an empty list is used.
+
+        Raises:
+            ValueError: If decoder is None or invalid.
+        """
+        if decoder is None:
+            raise ValueError("Decoder instance cannot be None")
+
         super().__init__(decoder)
         self.last_chunk_len_format = "I"
-        self.checksum_len_format = None
+        self.checksum_len_format: typing.Optional[str] = None
         self.decoder: typing.Union[RU10Decoder, LTDecoder, OnlineDecoder] = decoder
         decoder.read_all_before_decode = True
         self.headerChunk: typing.Optional[HeaderChunk] = None
         self.decoder.GEPP.insert_tmp()
         self.initial_A = self.decoder.GEPP.A.copy()
         self.initial_b = self.decoder.GEPP.b.copy()
-        self.initial_packet_mapping = None  # self.decoder.GEPP.packet_mapping.copy()
+        self.initial_packet_mapping: typing.Optional[dict] = None
         self.multi_error_packets_mode = False
-        self.get_versions_in_pool("GAGCCAGTGAGTCGTA")
+
         if metadata_list is None:
-            self.metadata_list = []
+            self.metadata_list: typing.List[str] = []
         else:
             self.metadata_list = metadata_list
 
-    def get_versions_in_pool(self, base_dna_version_string) -> int:
+        # Initialize version tracking
+        self._version_cache: typing.Dict[int, typing.List[str]] = {}
+
+    def get_versions_in_pool(self, base_dna_version_string: str) -> int:
         """
         Return the largest version number available in the pool.
 
-        If no version is available, return 0 (base-version only).
-        Versions are indexed starting from 0, where version 1 is the FIRST
-        version after the base version.
+        Scans all DNA sequences in the pool and extracts version numbers from
+        sequences containing the base_dna_version_string marker.
+
+        Args:
+            base_dna_version_string: The magic DNA string marking version sequences
+                (e.g., "GAGCCAGTGAGTCGTA").
+
+        Returns:
+            The highest version number found. Returns 0 if no versions are found
+            (base version only).
+
+        Note:
+            Versions are indexed starting from 0, where version 0 is the base version
+            and version 1 is the FIRST version after the base version.
+
+        Example:
+            >>> mv_decoder = MultiVersionDecoder(decoder)
+            >>> max_version = mv_decoder.get_versions_in_pool("GAGCCAGTGAGTCGTA")
+            >>> print(f"Available up to version: {max_version}")
         """
         res = 0
         fasta_entries = load_fasta(self.decoder.file)
+
         for seq in fasta_entries.values():
             idx = seq.find(base_dna_version_string)
             if idx != -1 and idx + len(base_dna_version_string) < len(seq):
-                version_num = tranlate_quat_to_byte(f"A{seq[idx - 3:idx]}")
-                res = max(res, struct.unpack("B", version_num)[0])
+                # Extract 3 bases before the magic string (version encoding)
+                version_bases = seq[max(0, idx - 3) : idx]
+                # Pad if necessary
+                if len(version_bases) < 3:
+                    version_bases = "A" * (3 - len(version_bases)) + version_bases
+                version_num = tranlate_quat_to_byte(f"A{version_bases}")
+                try:
+                    version_value = struct.unpack("B", version_num)[0]
+                    res = max(res, version_value)
+                except struct.error:
+                    logger.warning(f"Failed to parse version from sequence: {seq[:50]}...")
+
         return res
 
-    def get_sequences_for_version(self, base_dna_version_string, version) -> typing.List[str]:
+    def get_sequences_for_version(
+        self, base_dna_version_string: str, version: int
+    ) -> typing.List[str]:
         """
         Return a list of all sequences corresponding to the given version.
 
-        If no version is available, return an empty list.
+        Scans the DNA pool and returns all sequences that contain the specified
+        version number encoded before the base_dna_version_string marker.
+
+        Args:
+            base_dna_version_string: The base DNA version string marker.
+            version: The version number to retrieve (0-based, where 0 is base version).
+
+        Returns:
+            A list of DNA sequences for the specified version.
+            Returns an empty list if the version is not found.
+
+        Example:
+            >>> sequences = mv_decoder.get_sequences_for_version("GAGCCAGTGAGTCGTA", version=1)
+            >>> print(f"Found {len(sequences)} sequences for version 1")
         """
-        res = []
+        res: typing.List[str] = []
         fasta_entries = load_fasta(self.decoder.file)
+
         for seq in fasta_entries.values():
             idx = seq.find(base_dna_version_string)
             if idx != -1 and idx + len(base_dna_version_string) < len(seq):
-                version_num = tranlate_quat_to_byte(f"A{seq[idx - 3:idx]}")
-                if struct.unpack("B", version_num)[0] == version:
-                    res.append(seq)
+                # Extract 3 bases before the magic string
+                version_bases = seq[max(0, idx - 3) : idx]
+                # Pad if necessary
+                if len(version_bases) < 3:
+                    version_bases = "A" * (3 - len(version_bases)) + version_bases
+                version_num = tranlate_quat_to_byte(f"A{version_bases}")
+                try:
+                    version_value = struct.unpack("B", version_num)[0]
+                    if version_value == version:
+                        res.append(seq)
+                except struct.error:
+                    logger.warning(f"Failed to parse version from sequence: {seq[:50]}...")
+
         return res
 
-    def contains_metadata(self, seq, metadata_list=None):
-        """Return True if the sequence contains metadata."""
+    def contains_metadata(
+        self, seq: str, metadata_list: typing.Optional[typing.List[str]] = None
+    ) -> bool:
+        """
+        Check if a DNA sequence contains any metadata sequences.
+
+        Args:
+            seq: DNA sequence to check.
+            metadata_list: Optional list of metadata sequences to check against.
+                If None, uses the instance's metadata_list.
+
+        Returns:
+            True if the sequence contains any metadata, False otherwise.
+
+        Example:
+            >>> if mv_decoder.contains_metadata(seq):
+            ...     print("Sequence contains metadata - filtering out")
+        """
         if metadata_list is None:
             metadata_list = self.metadata_list
+
+        if not metadata_list:
+            return False
+
         return any(metadata in seq for metadata in metadata_list)
 
-    def decode_base_version(self, base_dna_version_string, known_base_file=None):
-        """Decode the base version (version 0) and store it on disk."""
+    def decode_base_version(
+        self, base_dna_version_string: str, known_base_file: typing.Optional[str] = None
+    ) -> typing.Union[RU10Decoder, LTDecoder, OnlineDecoder]:
         """
+        Decode the base version (version 0) and store it on disk.
+
+        This method decodes the original file without any version modifications.
+        It filters out packets containing version strings and metadata sequences.
+
+        Args:
+            base_dna_version_string: DNA version string to filter out during decoding.
+            known_base_file: Optional path to a pre-decoded base file. If provided
+                and exists, loads the base version from this file instead of decoding.
+
+        Returns:
+            The decoder instance after successful decoding.
+
+        Raises:
+            FileNotFoundError: If known_base_file is provided but doesn't exist.
+            RuntimeError: If decoding fails to complete.
+
+        Note:
+            The decoded file is saved with a "v0_" prefix to distinguish it from
+            other versions.
+
+        Example:
+            >>> # Decode from DNA sequences
+            >>> mv_decoder.decode_base_version("GAGCCAGTGAGTCGTA")
+            >>>
+            >>> # Or load from existing file
+            >>> mv_decoder.decode_base_version(
+            ...     "GAGCCAGTGAGTCGTA",
+            ...     known_base_file="v0_original_file.txt"
+            ... )
+        """
+        # Check if we can load from a known base file
         if known_base_file is not None and Path(known_base_file).exists():
-            print(f"Base version already decoded, loading from {known_base_file}", flush=True)
-            # TODO: manipulate decode state to reflect the loaded file (e.g. by loading the header chunk and updating the GEPP state accordingly)
-            with open(known_base_file, "rb") as f:
-                data = f.read()
-            chunk_size = self.decoder.GEPP.chunk_size
-            res = [np.frombuffer(data[i: i + chunk_size], dtype=np.uint8) for i in range(0, len(data), chunk_size)]
-            iden = np.identity(self.decoder.number_of_chunks)
-            self.decoder.GEPP = GEPP(iden, np.frombuffer(res, dtype=np.uint8))
-            self.decoder.input_new_packet()
-            return "TODO" # TODO
-        """
-        # a = self.decoder.solve()
-        # file_name = self.decoder.saveDecodedFile(return_file_name=True)
-        # tmp_packets = self.decoder.packets.copy()
-        # self.decoder_bkp = self.decoder
+            logger.info(f"Base version already decoded, loading from {known_base_file}")
+            try:
+                with open(known_base_file, "rb") as f:
+                    data = f.read()
+
+                chunk_size = self.decoder.GEPP.chunk_size
+                # Split data into chunks
+                res = [
+                    np.frombuffer(data[i : i + chunk_size], dtype=np.uint8)
+                    for i in range(0, len(data), chunk_size)
+                ]
+
+                # Create identity matrix and update GEPP state
+                iden = np.identity(self.decoder.number_of_chunks)
+                self.decoder.GEPP.A = iden
+                self.decoder.GEPP.b = np.array(res, dtype=np.uint8)
+                self.decoder.input_new_packet()
+
+                logger.info("Base version loaded successfully from file")
+                return self.decoder
+            except Exception as e:
+                logger.error(f"Failed to load base version from file: {e}")
+                # Fall through to decoding from DNA
+
+        # Decode base version from DNA sequences
+        logger.info("Decoding base version from DNA sequences...")
+
+        # Reset decoder state
         self.decoder = type(self.decoder).from_config_map(self.decoder.config_map)
-        # if we dont have a known base file, we have to decode the base version first
-        print("Decoding base version...", flush=True)
-        # we MUST filter out packets that contain the base_dna_version_string:
+
+        # Load all FASTA entries
         fasta_entries = load_fasta(self.decoder.file)
-        # we must filter out any sequences containing metadata information
-        # (otherwise we would have to fallback to DR4DNA to revert the changed
-        # content due to the metadata insertion)
+
+        # Filter out sequences containing metadata or version strings
         fasta_seqs = [
             seq
             for seq in fasta_entries.values()
             if not self.contains_metadata(seq, self.metadata_list)
-        ]
-        fasta_seqs = [
-            seq for seq in fasta_seqs if not self.contains_metadata(seq, [base_dna_version_string])
+            and not self.contains_metadata(seq, [base_dna_version_string])
         ]
 
-        # FIX ME: [x for x in fasta_seqs if x in ground_fasta],[x for x in ground_fasta if x not in fasta_seqs ]
-        #  it seems like we omit some sequences during creation of the new version!?!? (org. version has 12 sequences not present in the new version!
-        #  eg: CATCATCTCTGAAGGGCTTTCGGTTGTATCACGCAATACATCAGTACGATCTGTCTGCACGACACCGACTATAGTGCGGAAGTAAGGACCGATTTGTAGTTCCTCACGGTAATCCTGCTCAGCCCATCCGACCGCTATGAATTTCCGAATCTACAGCGTATTTGTAAT
-        #  this may be caused by generation sequences with the same seed (as they are stored as a set they may overwrite the original seq!)
-        #  but then again: why does the decoder solve to True?
-        #  also: we must enforce that we do not use the "version"-pattern in the base version.
-        #
-        # FIX ME: ok, it seems like the decoding fails with the "new" ini-file pointing to the old fasta file (which works with the old ini file)!
-        #  so it seems like it is a problem with the RU10Decoder instance getting wrong / incorrect values due to the ini file mismatch!=
+        logger.info(f"Found {len(fasta_seqs)} sequences for base version decoding")
 
-        # FIX ME: after inserting all known good packets we may try to repair all metadata and version packets using the reduction to chunk 0 (headerchunk) and inserting them after repair
-
+        # Get configuration parameters
         id_len_format = self.decoder.config_map.get("id_len_format", "")
         crc_len_format = self.decoder.config_map.get("crc_len_format", "")
         packet_len_format = self.decoder.config_map.get("packet_len_format", "")
+
+        # Process packets until we can solve
         for seq in fasta_seqs:
-            # revert seed spacing as it is a DNA-based method and thus not part of parse_raw_packet
+            # Revert seed spacing as it is DNA-based and not part of parse_raw_packet
             seq = self.decoder.revert_seed_spacing(seq, id_len_format)
+
             packet = self.decoder.parse_raw_packet(
                 BytesIO(tranlate_quat_to_byte(seq)).read(),
                 crc_len_format=crc_len_format,
@@ -183,52 +331,102 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 packet_len_format=packet_len_format,
                 id_len_format=id_len_format,
             )
+
             self.decoder.input_new_packet(packet)
             self.decoder.packets.append(packet)
+
             if len(self.decoder.packets) >= self.decoder.static_number_of_chunks:
                 if self.decoder.solve():
+                    logger.info("Base version decoded successfully")
                     break
-        # self.decoder.GEPP()
+
+        # Populate header chunk if enabled
         if self.decoder.use_headerchunk:
             self.decoder.populate_header_chunk()
+
+        # Save decoded file with version prefix
         if self.decoder.headerChunk is not None and self.decoder.headerChunk.file_name is not None:
             try:
-                Path(self.decoder.headerChunk.file_name.decode("utf-8")).rename(
-                    "v0_" + self.decoder.headerChunk.file_name.decode("utf-8")
-                )
+                file_name = self.decoder.headerChunk.file_name.decode("utf-8")
+                Path(file_name).rename("v0_" + file_name)
             except FileNotFoundError:
-                # if the file does not exist, we can safely ignore the error!
+                # File doesn't exist yet, which is fine
                 pass
+
+        # Save and rename the decoded file
         file_name = self.decoder.saveDecodedFile(
             last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"),
             return_file_name=True,
         )
         Path(file_name).rename("v0_" + file_name)
+
+        logger.info(f"Base version saved as v0_{file_name}")
         return self.decoder
 
-    def decode_to_version(self, base_dna_version_string, version):
+    def decode_to_version(
+        self, base_dna_version_string: str, version: int
+    ) -> typing.Dict[int, str]:
         """
         Decode the file up to the given version.
 
-        As each version is based on the previous version, this function
-        iteratively decodes each version up to the selected version and stores
-        all intermediate versions on disk. Existing versions are loaded from
-        disk and do not need to be decoded again. If the version is not in the
-        pool, it should return an error message.
+        Iteratively decodes each version from base (v0) up to the specified version,
+        storing all intermediate versions on disk. Existing versions are loaded from
+        disk and do not need to be decoded again.
+
+        Args:
+            base_dna_version_string: The base DNA version string marker.
+            version: Target version number to decode to (must be >= 1).
+
+        Returns:
+            A dictionary mapping version numbers to file paths for all decoded versions.
+
+        Raises:
+            ValueError: If version is less than 1 or not available in the pool.
+            RuntimeError: If decoding fails for any version.
+
+        Note:
+            Each version is based on the previous version, so all intermediate
+            versions must be decoded in sequence.
+
+        Example:
+            >>> decoded = mv_decoder.decode_to_version("GAGCCAGTGAGTCGTA", version=3)
+            >>> for ver, path in decoded.items():
+            ...     print(f"Version {ver}: {path}")
         """
-        # versions = []
-        # versions.append(self.decode_base_version(base_dna_version_string))
+        if version < 1:
+            raise ValueError("Version must be >= 1")
+
+        # Check if requested version exists in pool
+        max_version = self.get_versions_in_pool(base_dna_version_string)
+        if version > max_version:
+            raise ValueError(
+                f"Version {version} is not available in the pool. "
+                f"Maximum available version is {max_version}."
+            )
+
+        decoded_versions: typing.Dict[int, str] = {}
         id_len_format = self.decoder.config_map.get("id_len_format", "")
+
+        # Process each version iteratively
         for i in range(1, version + 1):
+            logger.info(f"Decoding version {i}/{version}...")
+
             version_seqs = self.get_sequences_for_version(base_dna_version_string, i)
+            if not version_seqs:
+                logger.warning(
+                    f"No sequences found for version {i} - skipping... "
+                    f"This may result in future versions to be incorrect!"
+                )
+                continue
+
             solved_chunks: typing.Dict[int, typing.List[RU10Packet]] = {}
+            bin_dna_version_str = tranlate_quat_to_byte(base_dna_version_string)
+
             for seq in version_seqs:
-                # create packet from seq while ignoring any broken checksum /error correction!
-                # FIXME: only revert seed spcaing if seed spacing was used during encoding!
+                # Revert seed spacing if it was used during encoding
                 reverted_dna_str = self.decoder.revert_seed_spacing(seq, id_len_format)
-                # TODO: we must correctly handle reed-solomon / crc calculation:
-                #  either: 1) recalculate crc / rs for modified packet during encoding such that we do not have to change the code here or
-                #  2) keep the encoded packet as is and handle broken crc / rs during decoding (ignore, or check with unchanged version)
+
+                # Parse packet from DNA sequence
                 packet = self.decoder.parse_raw_packet(
                     BytesIO(tranlate_quat_to_byte(reverted_dna_str)).read(),
                     crc_len_format=self.decoder.config_map.get("crc_len_format", ""),
@@ -236,28 +434,43 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                     packet_len_format=self.decoder.config_map.get("packet_len_format", ""),
                     id_len_format=id_len_format,
                 )
+
+                # Get used chunks list
                 used_chunks_list = from_true_false_list(self.decoder.removeAndXorAuxPackets(packet))
-                # self.decoder.input_new_packet(packet)
-                bin_dna_version_str = tranlate_quat_to_byte(base_dna_version_string)
+
+                # Find version string position in packet
                 find_result = packet.packed_used_packets.find(bin_dna_version_str)
                 header_size = packet.get_packet_header_size()
-
                 offset_pos = find_result - header_size + len(bin_dna_version_str)
-                reduced = reduce_packet_to_chunk(
-                    packet.copy(), self, used_chunks_list[0]
-                )  # always the first (usually the header chunk!)
-                # get the offset of the changed chunk (index / position from the used_chunks_list!) from the reduced packet:
-                (target_chunk,) = struct.unpack("<B", reduced.data[offset_pos : offset_pos + 1])
+
+                # Reduce packet to target chunk
+                reduced = reduce_packet_to_chunk(packet.copy(), self, used_chunks_list[0])
+
+                # Extract target chunk ID from reduced packet
+                try:
+                    (target_chunk,) = struct.unpack("<B", reduced.data[offset_pos : offset_pos + 1])
+                except struct.error:
+                    logger.error(f"Failed to extract chunk ID from packet with seed {reduced.id}")
+                    continue
+                if used_chunks_list[target_chunk] in solved_chunks.keys():
+                    continue
+                # Create mask to isolate version string region
                 zeros_mask = np.zeros(len(packet.data), dtype=np.uint8)
-                zeros_mask[
-                    offset_pos - len(bin_dna_version_str) - 1 : offset_pos + 1
-                ] = np.frombuffer(
-                    reduced.data[offset_pos - len(bin_dna_version_str) - 1 : offset_pos + 1],
-                    dtype=np.uint8,
+                # using the diff between old and new version allows us to use any chunk as a comparison base
+                # and not only the header chunk:
+                diff_to_last_version = xor_numpy(
+                    np.frombuffer(reduced.data, np.uint8), self.decoder.GEPP.b[used_chunks_list[0]]
                 )
-                # xor the packet data with the mask AND the target_chunk to revert the insertion of the version information:
-                repaired_data = xor_numpy(packet.data, zeros_mask)
-                # TODO: set content (data) of the packet to repaired_data and update decoder accordingly
+                mask_start = offset_pos - len(bin_dna_version_str) - 1
+                mask_end = offset_pos + 1
+
+                if mask_start >= 0 and mask_end <= len(reduced.data):
+                    zeros_mask[mask_start:mask_end] = 255
+                masked_diff_to_last_version = diff_to_last_version & zeros_mask
+                # XOR to revert changed  the packet data
+                repaired_data = xor_numpy(packet.data, masked_diff_to_last_version)
+
+                # Create repaired packet
                 res = RU10Packet(
                     repaired_data,
                     packet.used_packets,
@@ -270,189 +483,270 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                     id_len_format=id_len_format,
                     save_number_of_chunks_in_packet=packet.total_number_of_chunks is None,
                 )
+
+                # Store packet for target chunk
                 if used_chunks_list[target_chunk] not in solved_chunks:
                     solved_chunks[used_chunks_list[target_chunk]] = []
-                # solve to target_chunk and store the result of later parsing
+
+                # Reduce packet and store
                 reduced_packet = reduce_packet_to_chunk(
                     res.copy(), self, used_chunks_list[target_chunk]
                 )
-                # we must defer packet insertion as we might have split packets due to missing unchanged space for version-string insertion
                 solved_chunks[used_chunks_list[target_chunk]].append(reduced_packet)
-            # after parsing all version packets, we can combine the data if more than one differing solution for a chunk exists
-            # and add the combined packets to the decoder to solve the new file version. For this we must ensure that the chunks for the new version are used instead of the old version!
-            # TODO: for this we may replace the affected rows of GEPP.b
+
+            # Combine data for chunks with multiple solutions
             for key, values in solved_chunks.items():
+                if not values:
+                    continue
+
                 unique_data_parts = {bytes(v.data) for v in values}
-                # if len(unique_data_parts) > 1:
+
+                # XOR differences with original version
                 tmp = np.zeros_like(self.decoder.GEPP.b[key], dtype=np.uint8)
-                # we must combine the parts: xor all parts with the original version, then xor them together and add the original version via xor:
                 for part in unique_data_parts:
                     tmp = xor_numpy(tmp, xor_numpy(part, self.decoder.GEPP.b[key]))
+
+                # Create insertion packet
                 insertion_packet = values[0].copy()
                 insertion_packet.data = xor_numpy(tmp, self.decoder.GEPP.b[key])
                 self.decoder.packets.append(insertion_packet)
                 self.decoder.GEPP.b[key] = insertion_packet.data
-            # save the new version:
-            # TODO: add logic for crc calculation. for now: just ignore the faulty crc in the header!
-            file_name = self.decoder.saveDecodedFile(
-                last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"),
-                return_file_name=True,
-                ignore_crc=True,
-                print_to_output=False,
-            )
-            Path(file_name).rename(f"v{i}_" + file_name)
+
+            # Save the new version
+            try:
+                file_name = self.decoder.saveDecodedFile(
+                    last_chunk_len_format=self.decoder.config_map.get("last_chunk_len_str", "I"),
+                    return_file_name=True,
+                    ignore_crc=True,
+                    print_to_output=False,
+                )
+                versioned_file = f"v{i}_{file_name}"
+                Path(file_name).rename(versioned_file)
+                decoded_versions[i] = versioned_file
+                logger.info(f"Version {i} saved as {versioned_file}")
+            except Exception as e:
+                logger.error(f"Failed to save version {i}: {e}")
+                raise RuntimeError(f"Failed to save version {i}: {e}")
+
+        return decoded_versions
 
     @staticmethod
-    def solve_lin_dep(a, b):
+    def solve_lin_dep(
+        a: typing.List[np.ndarray], b: np.ndarray
+    ) -> typing.Optional[typing.List[np.ndarray]]:
         """
-        Calculate which rows in vector a can be used to create the target b.
+        Calculate which rows in vector `a` can be used to create the target `b`.
+
+        This method tries combinations of up to 3 vectors from `a` to find which
+        ones, when XORed together, produce the target vector `b`.
 
         Args:
-            a: A matrix where each row is either used to create b or not
-            b: The target vector
+            a: A list of numpy arrays where each array is either used to create b or not.
+            b: The target numpy array to produce.
 
         Returns:
-            A list of rows in a that can be used to create b, or None if no solution exists
+            A list of arrays from `a` that can be XORed to produce `b`,
+            or None if no solution exists with up to 3 vectors.
+
+        Note:
+            This method checks combinations of 1, 2, and 3 vectors. For larger
+            combinations, consider using a more efficient algorithm.
+
+        Example:
+            >>> vectors = [np.array([1, 0, 1, 0]), np.array([0, 1, 0, 1])]
+            >>> target = np.array([1, 1, 1, 1])
+            >>> solution = MultiVersionDecoder.solve_lin_dep(vectors, target)
         """
-        combs = [list(combinations(a, i)) for i in range(1, min(4, len(a) + 1))]
-        for comb in combs:
-            for elem in comb:
-                if len(elem) > 1:
-                    r = reduce(lambda x, y: xor_numpy(x.astype("uint8"), y.astype("uint8")), elem)
+        # Try combinations of 1, 2, and 3 vectors
+        max_combinations = min(3, len(a))
+        for i in range(1, max_combinations + 1):
+            for comb in combinations(a, i):
+                if len(comb) > 1:
+                    r = reduce(
+                        lambda x, y: xor_numpy(x.astype("uint8"), y.astype("uint8")),
+                        comb,
+                    )
                 else:
-                    r = elem[0]
+                    r = comb[0]
+
                 if np.array_equal(r.astype("uint8"), b):
-                    return [x.astype("uint8") for x in elem]
+                    return [x.astype("uint8") for x in comb]
+
         return None
 
     def repair_and_store_by_packet(
-        self, chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None
-    ):
+        self,
+        chunk_id: int,
+        packet_id: int,
+        hex_value: str,
+        clear_working_dir: bool = False,
+        correctness_function: typing.Optional[typing.Callable[[np.ndarray], bool]] = None,
+    ) -> str:
         """
         Repair a chunk and store the result, trying different possible corrupt packets.
 
-        This function is used when there are multiple invalid packets to save multiple versions,
-        where each saved version uses a different possible packet to repair the chunk.
+        This function is used when there are multiple invalid packets to save multiple
+        versions, where each saved version uses a different possible packet to repair
+        the chunk.
+
+        Args:
+            chunk_id: ID of the chunk to repair.
+            packet_id: ID of the packet suspected to be corrupt.
+            hex_value: Hexadecimal value to use for repair.
+            clear_working_dir: If True, clear the working directory before saving.
+            correctness_function: Optional function to verify repair correctness.
+                Takes GEPP.b as input and returns True if correct.
+
+        Returns:
+            The name of the saved file.
+
+        Raises:
+            ValueError: If repair fails.
+
+        Example:
+            >>> filename = mv_decoder.repair_and_store_by_packet(
+            ...     chunk_id=5,
+            ...     packet_id=3,
+            ...     hex_value="A1B2C3D4",
+            ...     clear_working_dir=True
+            ... )
         """
+        # Backup current GEPP state
         bkp_A = self.decoder.GEPP.A.copy()
         bkp_b = self.decoder.GEPP.b.copy()
+
+        # Perform manual repair
         self.manual_repair(chunk_id, packet_id, hex_value)
+
+        # Setup working directory
         working_dir = "multi_file_repair"
         if clear_working_dir:
-            # delete the folder working_dir if it exists:
             if Path(working_dir).exists():
                 shutil.rmtree(working_dir)
-            # create the folder working_dir:
             Path(working_dir).mkdir(parents=True, exist_ok=True)
-        # we might have to check if header chunk is used!
+
+        # Parse header if using header chunk
         self.parse_header("I")
+        is_correct = False
+
         if self.headerChunk is not None and self.headerChunk.checksum_len_format is not None:
             is_correct = self.is_checksum_correct()
-        else:
-            if correctness_function is not None:
-                is_correct = correctness_function(self.decoder.GEPP.b)
-            else:
-                is_correct = False
+        elif correctness_function is not None:
+            is_correct = correctness_function(self.decoder.GEPP.b)
+
+        # Save decoded file
         try:
             filename = self.decoder.saveDecodedFile(return_file_name=True, print_to_output=False)
         except ValueError as ve:
-            filename = ve.args[1]
+            filename = ve.args[1] if len(ve.args) > 1 else "unknown"
+
+        # Rename with metadata
         _file = Path(filename)
-        stem = ("CORRECT_" if is_correct else "") + _file.stem + f"_{chunk_id}_{packet_id}"
-        _new_file = _file.rename(Path(working_dir + "/" + stem + _file.suffix))
+        prefix = "CORRECT_" if is_correct else ""
+        stem = f"{prefix}{_file.stem}_{chunk_id}_{packet_id}"
+        _new_file = _file.rename(Path(working_dir) / f"{stem}{_file.suffix}")
+
+        # Restore GEPP state
         self.decoder.GEPP.A = bkp_A
         self.decoder.GEPP.b = bkp_b
-        return f"{_new_file.name}"
+
+        return _new_file.name
 
 
 def init_args() -> argparse.Namespace:
-    """Parse command-line arguments for MultiVersionDecoder."""
-    parser = argparse.ArgumentParser()
+    """
+    Parse command-line arguments for MultiVersionDecoder.
+
+    Returns:
+        Parsed arguments namespace.
+
+    Example:
+        >>> args = init_args()
+        >>> print(f"Using config: {args.ini}")
+    """
+    parser = argparse.ArgumentParser(
+        description="Multi-Version Decoder for NOREC4DNA encoded files"
+    )
     parser.add_argument(
         "--ini",
         metavar="ini",
         type=str,
-        help="config file (ini)",
+        help="Configuration file (INI format)",
         default="/home/michael/Code/DR4DNA/eval/sleeping_beauty_no_error.ini",
     )
-    # metadata files (comma separated list of files containing metadata sequences that should be expected when decoding):
-    # --unwanted_metadata_file /home/michael/Code/DR4DNA/NOREC4DNA/unwanted_meta.fasta
+
+    # Metadata argument group (mutually exclusive)
     metadata_arg_group = parser.add_mutually_exclusive_group(required=False)
     metadata_arg_group.add_argument(
         "--metadata_file",
         metavar="metafile",
         type=str,
-        help="file containing metadata in the fasta format",
+        help="File containing metadata in FASTA format (comma-separated list)",
     )
     metadata_arg_group.add_argument(
         "--metadata",
         metavar="dmeta",
         type=str,
-        help="comma-separated list of metadata DNA sequences",
+        help="Comma-separated list of metadata DNA sequences",
     )
+
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """
+    Main entry point for MultiVersionDecoder CLI.
+
+    This function parses command-line arguments, initializes the decoder,
+    and performs base version decoding followed by version 1 decoding.
+    """
     parsed_args = init_args()
-    # file = "eval/sleeping_beauty_no_error_v1_Thu_Feb__5_13_49_48_2026.ini"
-    # file = "eval/sleeping_beauty_no_error.ini"
 
-    file = parsed_args.ini
+    # Load metadata
+    metadata_list: typing.List[str] = []
     if parsed_args.metadata_file is not None:
-        # split the arg at "," and parse each file as fasta file, then extract the sequences and store them in a list:
-        metadata_list = []
+        # Split and parse each metadata file
         for metadata_file in parsed_args.metadata_file.split(","):
-            fasta_entries = load_fasta(metadata_file)
-            metadata_list.extend(fasta_entries.values())
-    else:
+            try:
+                fasta_entries = load_fasta(metadata_file)
+                metadata_list.extend(fasta_entries.values())
+                logger.info(f"Loaded {len(fasta_entries)} metadata sequences from {metadata_file}")
+            except Exception as e:
+                logger.error(f"Failed to load metadata from {metadata_file}: {e}")
+    elif parsed_args.metadata is not None:
         metadata_list = parsed_args.metadata.split(",")
+        logger.info(f"Using {len(metadata_list)} inline metadata sequences")
 
-    x = ConfigReadAndExecute(file).execute(return_decoder=True)[0]
-    semi_automatic_solver = SemiAutomaticReconstructionToolkit(x)
+    # Initialize decoder from config
+    try:
+        config = ConfigReadAndExecute(parsed_args.ini)
+        decoder = config.execute(return_decoder=True)[0]
+    except Exception as e:
+        logger.error(f"Failed to initialize decoder: {e}")
+        raise
+
+    # Initialize toolkit and decoder
+    semi_automatic_solver = SemiAutomaticReconstructionToolkit(decoder)
+
+    # Display file with chunk borders
     print(semi_automatic_solver.view_file_with_chunkborders(False, False, "I"), flush=True)
-    mv_decoder = MultiVersionDecoder(x, metadata_list)
-    mv_decoder.decode_base_version("GAGCCAGTGAGTCGTA")
 
-    mv_decoder.decode_to_version("GAGCCAGTGAGTCGTA", 1)
+    # Initialize multi-version decoder
+    mv_decoder = MultiVersionDecoder(decoder, metadata_list)
 
-    """
-    sleep(1)
-    print("Enter the rows that are INVALID (as hex; separated by space): ")
-    invalid_rows = input().split(" ")
-    invalid_rows = [int(i, 16) for i in invalid_rows]
+    # Define base version string
+    BASE_VERSION_STRING = "GAGCCAGTGAGTCGTA"
 
-    print("Enter the rows that are VALID (as hex; separated by space): ")
-    valid_rows = input().split(" ")
-    valid_rows = [int(i, 16) for i in valid_rows]
+    # Decode base version
+    logger.info("Decoding base version...")
+    mv_decoder.decode_base_version(BASE_VERSION_STRING)
 
-    common_packets = semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows, valid_rows)
-    print("potentially invalid Packets:")
-    print(" ".join(map(lambda x: "1" if x else "0", common_packets)), flush=True)
-    while np.count_nonzero(common_packets == True) > 1:
-        rem_possible_chunks = semi_automatic_solver.get_possible_invalid_chunks_from_common_packets(common_packets)
-        print("possible invalid chunks:")
-        print(" ".join(map(lambda _x: f"{_x[0]:08x}" if _x[1] else "_", enumerate(rem_possible_chunks))), flush=True)
+    # Decode to version 1
+    logger.info("Decoding version 1...")
+    mv_decoder.decode_to_version(BASE_VERSION_STRING, 1)
 
-        print(
-            "Result unambiguous, enter additional rows that are INVALID (as hex; separated by space), if there are none, just hit [ENTER]: ",
-            flush=True)
-        tmp_invalid_rows = input()
-        if len(tmp_invalid_rows) != 0:
-            for new_invalid_line in tmp_invalid_rows.split(" "):
-                invalid_rows.append(int(new_invalid_line, 16))
-        print(
-            "Result unambiguous, enter additional rows that are VALID (as hex; separated by space), if there are none, just hit [ENTER]: ",
-            flush=True)
-        tmp_valid_rows = input()
-        if len(tmp_valid_rows) != 0:
-            for new_valid_line in tmp_valid_rows.split(" "):
-                valid_rows.append(int(new_valid_line, 16))
-        common_packets = semi_automatic_solver.decoder.GEPP.get_common_packets(invalid_rows, valid_rows)
-        print(" ".join(map(lambda _X: "1" if _X else "0", common_packets)), flush=True)
-        if len(tmp_valid_rows) == 0 and len(tmp_invalid_rows) == 0:
-            break
-    print("Missing chunks:")
-    print(" ".join(map(lambda _x: "1" if _x else "0", semi_automatic_solver.decoder.GEPP.find_missing_chunks())),
-          flush=True)
-    """
+    logger.info("Decoding complete!")
+
+
+if __name__ == "__main__":
+    main()

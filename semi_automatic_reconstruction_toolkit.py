@@ -406,7 +406,11 @@ class SemiAutomaticReconstructionToolkit:
         Return the chunk content as bytes
         """
         start = 1 if self.decoder.use_headerchunk else 0
-        return self.decoder.GEPP.b[start:].reshape(-1).tobytes()
+        res = self.decoder.GEPP.b[start:].reshape(-1).tobytes()
+        # remove the padding of the last chunk if there is a header chunk:
+        if self.decoder.use_headerchunk and self.decoder.headerChunk is not None:
+            res = res[: -len(self.decoder.headerChunk.data)-self.decoder.headerChunk.last_chunk_length]
+        return res
 
     def parse_header(self, last_chunk_len_format, checksum_len_format=None):
         if self.decoder.use_headerchunk:
