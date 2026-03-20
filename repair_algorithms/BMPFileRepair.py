@@ -717,7 +717,7 @@ class BmpFileRepair(FileSpecificRepair):
             content = content[0]
         if content is not None:
             try:
-                content_type, content_string = content.split(",")
+                _, content_string = content.split(",")
                 new_error_part = np.array(
                     [
                         a ^ b
@@ -798,7 +798,7 @@ def parse_jsonstring(json_string, shape=None, scale=1):
     mask = np.zeros(shape, dtype=np.bool)
     try:
         data = json.loads(json_string)
-    except (json.JSONDecodeError, ValueError, TypeError):
+    except (json.JSONDecodeError, TypeError):
         return mask
     scale = 1
     for obj in data["objects"]:

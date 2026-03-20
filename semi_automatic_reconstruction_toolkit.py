@@ -148,7 +148,7 @@ class SemiAutomaticReconstructionToolkit:
         return f"Saved {len(possible_packets)} results to folder {working_dir}: {res}"
 
     def get_possible_invalid_chunks_from_common_packets(
-        self, _common_packets: typing.List[bool]
+            self, _common_packets: typing.List[bool]
     ) -> typing.List[bool]:
         """
         Get a list of possible invalid chunks from the given list of invalid chunks by calculating which chunks use
@@ -187,9 +187,9 @@ class SemiAutomaticReconstructionToolkit:
                 tmp_gepp.remove_row(i)
         try:
             res = (
-                tmp_gepp.isPotentionallySolvable()
-                and not any(tmp_gepp.find_missing_chunks())
-                and tmp_gepp.solve()
+                    tmp_gepp.isPotentionallySolvable()
+                    and not any(tmp_gepp.find_missing_chunks())
+                    and tmp_gepp.solve()
             )
         except Exception:
             res = False
@@ -279,11 +279,11 @@ class SemiAutomaticReconstructionToolkit:
                 continue
 
             if (
-                self.decoder.number_of_chunks - 1 == x
-                and self.decoder.use_headerchunk
-                and self.headerChunk is not None
+                    self.decoder.number_of_chunks - 1 == x
+                    and self.decoder.use_headerchunk
+                    and self.headerChunk is not None
             ):
-                output = self.decoder.GEPP.b[x][0][0 : self.headerChunk.get_last_chunk_length()]
+                output = self.decoder.GEPP.b[x][0][0: self.headerChunk.get_last_chunk_length()]
                 res.append(output)
             else:
                 if null_is_terminator:
@@ -323,12 +323,12 @@ class SemiAutomaticReconstructionToolkit:
             return len(res[0])
 
     def view_file_with_chunkborders(
-        self,
-        as_hex: bool = False,
-        null_is_terminator: bool = False,
-        last_chunk_len_format: str = "I",
-        add_line_numbers: bool = False,
-        checksum_len_format=None,
+            self,
+            as_hex: bool = False,
+            null_is_terminator: bool = False,
+            last_chunk_len_format: str = "I",
+            add_line_numbers: bool = False,
+            checksum_len_format=None,
     ):
         """
         Show the content of decoder.b with borders after every n-th symbol.
@@ -401,15 +401,15 @@ class SemiAutomaticReconstructionToolkit:
             checksum = algo(chunk, checksum)
         return checksum == self.headerChunk.checksum
 
-    def get_file_as_bytes(self):
+    def get_file_as_bytes(self, include_padding=False):
         """
         Return the chunk content as bytes
         """
         start = 1 if self.decoder.use_headerchunk else 0
-        res = self.decoder.GEPP.b[start:].reshape(-1).tobytes()
+        res = self.decoder.GEPP.b[start:self.decoder.number_of_chunks].reshape(-1).tobytes()
         # remove the padding of the last chunk if there is a header chunk:
-        if self.decoder.use_headerchunk and self.decoder.headerChunk is not None:
-            res = res[: -len(self.decoder.headerChunk.data)-self.decoder.headerChunk.last_chunk_length]
+        if self.decoder.use_headerchunk and self.decoder.headerChunk is not None and not include_padding:
+            res = res[:-(len(self.decoder.headerChunk.data) - self.decoder.headerChunk.last_chunk_length)]
         return res
 
     def parse_header(self, last_chunk_len_format, checksum_len_format=None):
@@ -447,7 +447,7 @@ class SemiAutomaticReconstructionToolkit:
         return None
 
     def repair_and_store_by_packet(
-        self, chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None
+            self, chunk_id, packet_id, hex_value, clear_working_dir=False, correctness_function=None
     ):
         # this function will be used if we have multiple invalid packets (and corrected chunks) to save multiple version,
         # where each saved version used a different possible packet to repair the chunk.

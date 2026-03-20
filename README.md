@@ -153,7 +153,7 @@ This experiment is expected to run in under 10 seconds on a typical desktop pc.
 
 ```bash
 # Example with manual repair for BMP image
-python app.py eval/Cornell_box_radiosity_small.bmp_Fri_Mar_31_12_58_30_2023_120.ini 
+python app.py eval/Cornell_box_radiosity_small.bmp_Fri_Mar_31_12_58_30_2023_120.ini
 ```
 
 While calculating the rank shows that an automatic recovery is not possible, `Reload image`can be used to the content of
@@ -395,7 +395,7 @@ The plugin is only active in this case.
 - "_Attempt automatic repair (single-packet)_": This will use the technique described above to attempt an automatic repair. The error
   delta can be directly calculated from one of the differing set of the same row.
 - "_Automatic Repair (multi-file)_" if, after "Finding corrupt packet by shuffling", there are multiple packets which
-  might be the corrupt packet, this will create and save all possible repaired versions of the file. 
+  might be the corrupt packet, this will create and save all possible repaired versions of the file.
   If the header-chunk of the NOREC4DNA encoding exists and contains a file-wide checksum, this will automatically detect
   the version which produces the correct checksum.
   This might improve the recovery speed as generating more permutations will increase the runtime.
@@ -467,6 +467,19 @@ The produced ZIP file can then be used to test the DR4DNA tool together with the
 
 If you use this tool for scientific research, please cite the following paper:
 
-``` 
-TBD 
+```bibtex
+@article{schwarz2024data,
+  title = {Data recovery methods for DNA storage based on fountain codes},
+  author = {Schwarz, Peter Michael and Freisleben, Bernd},
+  journal = {Computational and Structural Biotechnology Journal},
+  volume = {23},
+  pages = {1808--1823},
+  year = {2024},
+  doi = {10.1016/j.csbj.2024.04.048},
+  pmid = {38707543},
+  pmcid = {PMC11066528}
+}
 ```
+
+**APA Style:**
+Schwarz, P. M., & Freisleben, B. (2024). Data recovery methods for DNA storage based on fountain codes. *Computational and Structural Biotechnology Journal, 23*, 1808–1823. https://doi.org/10.1016/j.csbj.2024.04.048

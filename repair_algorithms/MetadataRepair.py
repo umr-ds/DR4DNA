@@ -55,7 +55,7 @@ class MetadataRepair(RandomShuffleRepair):
     def filter_nonprintable(text: str) -> str:
         """Return `text` with non-printable characters removed."""
         if text is None:
-            return text
+            return ""
         return "".join(ch for ch in text if ch.isprintable())
 
     def load_metadata_seqs_as_bytes(
@@ -73,7 +73,7 @@ class MetadataRepair(RandomShuffleRepair):
         parsed: typing.List[typing.Any] = []
         try:
             tmp = parse_metadata_file(filename)
-            parsed = {tranlate_quat_to_byte(x) for x in tmp}
+            parsed = [tranlate_quat_to_byte(x) for x in tmp]
         except Exception as ex:
             logger.error(ex)
 
@@ -209,6 +209,13 @@ class MetadataRepair(RandomShuffleRepair):
     ) -> typing.Generator[typing.Tuple[int, typing.FrozenSet[int], bool], None, None]:
         """
         Return a representative for each set of equal seed rows. Only consider rows containing a header chunk.
+
+        Args:
+            equal_seed_rows:
+            rows_with_headerchunk:
+            rows_with_metadata:
+        Returns:
+            Generator
         """
         plain_metadata_rows = {x[0] for x in rows_with_metadata}
         for row_set in equal_seed_rows:
@@ -229,6 +236,11 @@ class MetadataRepair(RandomShuffleRepair):
     def solve_and_map(gepp: GEPP_intern) -> typing.Tuple[GEPP_intern, numpy.ndarray]:
         """
         Solve the equation system and return the full equation system including the actual header chunk if possible.
+
+        Args:
+            gepp: GEPP instance
+
+        Returns: Tuple with the GEPP instance and the identiy mapping
         """
         import numpy as _np
 

@@ -6,11 +6,10 @@ equation system. By shuffling the order of equations and solving multiple times,
 it can identify corrupt packets through analysis of differing solutions.
 """
 
-import typing
 from collections import Counter
 from functools import reduce
+from typing import Any, Dict, List, Optional, Unpack
 
-# import norec4dna
 import numpy
 import numpy as np
 
@@ -19,6 +18,11 @@ from NOREC4DNA.norec4dna import helper
 from NOREC4DNA.norec4dna.GEPP import GEPP
 from repair_algorithms.FileSpecificRepair import FileSpecificRepair
 from repair_algorithms.PluginManager import PluginManager
+from repair_algorithms.types import (
+    PluginCallbackKwargs,
+    PluginCallbackResult,
+    ShuffleCallbackKwargs,
+)
 
 
 class RandomShuffleRepair(FileSpecificRepair):
@@ -41,25 +45,29 @@ class RandomShuffleRepair(FileSpecificRepair):
         intersects: Mapping of differences to possible corrupt packets
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        semi_automatic_solver: Optional[Any] = None,
+        chunk_tag: Optional[List[int]] = None,
+    ) -> None:
         """
         Initialize the random shuffle repair plugin.
 
         Args:
-            *args: Positional arguments passed to parent class
-            **kwargs: Keyword arguments passed to parent class
+            semi_automatic_solver: Semi-automatic reconstruction toolkit instance
+            chunk_tag: Chunk tag list (0=unknown, 1=invalid, 2=valid, 3=undecoded)
         """
-        super().__init__(*args, **kwargs)
-        self.modified_initial_sol = None
-        self.num_shuffles = 5
-        self.error_matrix = None
-        self.file_bytes = None
-        self.reconstructed_file_bytes = None
+        super().__init__(semi_automatic_solver, chunk_tag)
+        self.modified_initial_sol: Optional[norec4dna.GEPP] = None
+        self.num_shuffles: int = 5
+        self.error_matrix: Optional[numpy.ndarray] = None
+        self.file_bytes: Optional[bytes] = None
+        self.reconstructed_file_bytes: Optional[bytearray] = None
         self.load()
-        self.solutions: typing.List[norec4dna.GEPP] = []
-        self.perms = []  # permutation used for solutions
-        self.calculated_diff_set = None
-        self.intersects = None
+        self.solutions: List[norec4dna.GEPP] = []
+        self.perms: List[Any] = []  # permutation used for solutions
+        self.calculated_diff_set: Optional[set] = None
+        self.intersects: Optional[Dict[bytes, List[int]]] = None
 
     def load(self):
         """
@@ -93,7 +101,7 @@ class RandomShuffleRepair(FileSpecificRepair):
             self.reconstructed_file_bytes = bytearray(self.file_bytes)
         self.error_matrix = np.zeros((self.gepp.b.shape[0], self.gepp.b.shape[1]), dtype=np.float32)
 
-    def repair(self, *args, **kwargs):
+    def repair(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """
         Repair corrupt chunks using calculated error deltas.
 
@@ -101,11 +109,16 @@ class RandomShuffleRepair(FileSpecificRepair):
         by XORing affected rows with the error delta.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Keyword arguments. Common keys:
+                - c_ctx: Dash callback context
+                - chunk_tag: Current chunk tag list
 
         Returns:
-            Dictionary with repair status and information
+            Dictionary with repair status and information:
+                - 'info': Status message (if error occurred)
+                - 'update_b': Whether to update GEPP b matrix
+                - 'refresh_view': Whether to refresh the view
         """
         if (
             self.solutions is None
@@ -156,7 +169,7 @@ class RandomShuffleRepair(FileSpecificRepair):
             }
         return {"update_b": True, "refresh_view": True}
 
-    def partial_repair(self, *args, **kwargs):
+    def partial_repair(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """
         Perform partial repair for multi-file scenarios.
 
@@ -164,11 +177,14 @@ class RandomShuffleRepair(FileSpecificRepair):
         corrupt packets are found. Uses constrained repair to handle ambiguity.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Keyword arguments (unused in this method)
 
         Returns:
-            Dictionary with repair status and information
+            Dictionary with repair status and information:
+                - 'info': Status message (if error occurred)
+                - 'update_b': Whether to update GEPP b matrix
+                - 'refresh_view': Whether to refresh the view
         """
         if self.intersects is None or len(self.intersects) == 0:
             return {
@@ -312,11 +328,10 @@ class RandomShuffleRepair(FileSpecificRepair):
                 )
             else:
                 # rows are equal: update correct_packets set to remove candidates later
-                possible_packets_intersect = possible_packets_intersect
                 correct_packets = getattr(self, "correct_packets", set())
                 correct_packets = correct_packets.union(possible_packets_intersect)
                 self.correct_packets = correct_packets
-                for diff_bytes in list(self.intersects.keys()):
+                for diff_bytes in self.intersects.keys():
                     self.intersects[diff_bytes] = np.setdiff1d(
                         self.intersects[diff_bytes], list(correct_packets)
                     ).tolist()
@@ -389,6 +404,8 @@ class RandomShuffleRepair(FileSpecificRepair):
         # add initial GEPP solution:
         if num_shuffles is not None:
             self.num_shuffles = num_shuffles
+        else:
+            self.num_shuffles = 5
         if self.num_shuffles - len(self.solutions) > 0:
             self.perms.extend(
                 self.generate_permutations(
@@ -648,18 +665,24 @@ class RandomShuffleRepair(FileSpecificRepair):
             },
         }
 
-    def update_num_shuffle(self, *args, **kwargs):
+    def update_num_shuffle(self, **kwargs: Unpack[PluginCallbackKwargs]) -> Dict[str, bool]:
         """
         Update the number of shuffles from callback value.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Keyword arguments containing c_ctx with callback context
+            **kwargs: Keyword arguments containing:
+                - c_ctx: Dash callback context with triggered[0].value
 
         Returns:
-            Dictionary with refresh flags
+            Dictionary with refresh flags:
+                - 'refresh_view': Whether to refresh the view
+                - 'update_b': Whether to update GEPP b matrix
         """
-        num_shuffle = kwargs["c_ctx"].triggered[0]["value"]
+        c_ctx = kwargs.get("c_ctx")
+        if c_ctx is None:
+            return {"refresh_view": False, "update_b": False}
+
+        num_shuffle = c_ctx.triggered[0]["value"]
         # we could check if kwargs["c_ctx"].triggered[X] has a prop_io equal to the textbox's id
         if num_shuffle is None or num_shuffle < 1:
             self.num_shuffles = len(self.gepp.b[0])
@@ -668,30 +691,33 @@ class RandomShuffleRepair(FileSpecificRepair):
 
         return {"refresh_view": False, "update_b": False}
 
-    def get_incorrect_columns(self, *args, **kwargs):
+    def get_incorrect_columns(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """
         Get column tags based on incorrect column analysis.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Additional keyword arguments (unused in this method)
 
         Returns:
-            Dictionary with column_tag updates and refresh flags
+            Dictionary with column_tag updates and refresh flags:
+                - 'column_tag': List of column tag values
+                - 'updates_b': Whether to update GEPP b matrix
+                - 'refresh_view': Whether to refresh the view
         """
         incorrect_columns = self.find_incorrect_columns()
         column_tags = [x[2] for x in incorrect_columns]
         return {"column_tag": column_tags, "updates_b": False, "refresh_view": True}
 
-    def find_incorrect_columns(self, *args, **kwargs):
+    def find_incorrect_columns(self, *args: Any, **kwargs: Any):
         """
         Find columns with errors using column counter analysis.
 
         Yields columns that have error values greater than 0.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Additional keyword arguments (unused in this method)
 
         Yields:
             Tuples of (column_index, error_diff, count, counter) for columns with errors
@@ -709,7 +735,7 @@ class RandomShuffleRepair(FileSpecificRepair):
             if not exists_gr_zero:
                 yield i, 0.0, 0, counter
 
-    def get_column_counter(self, *args, **kwargs):
+    def get_column_counter(self, *args: Any, **kwargs: Any) -> List[Counter]:
         """
         Get column error counters for analysis.
 
@@ -717,18 +743,15 @@ class RandomShuffleRepair(FileSpecificRepair):
         counters for error values in each column.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Additional keyword arguments (unused in this method)
 
         Returns:
             List of Counter objects for each column's error values
         """
         if self.error_matrix is None:
-            self.error_matrix = self.find_error_regions(*args, **kwargs)
-        avg_errors = []
-        row_counters = []
-        for i in range(self.gepp.b.shape[1]):
-            avg_errors.append(np.mean(self.error_matrix[:, i]))
+            self.error_matrix = self.find_error_regions()
+        row_counters: List[Counter] = []
         for i in range(self.gepp.b.shape[1]):
             ctr = Counter(self.error_matrix[:, i])
             row_counters.append(ctr)
@@ -744,7 +767,7 @@ class RandomShuffleRepair(FileSpecificRepair):
         super().update_chunk_tag(chunk_tag)
         self.error_matrix = None  # this could be speed-up?!
 
-    def find_error_regions(self, *args, **kwargs):
+    def find_error_regions(self, *args: Any, **kwargs: Any) -> numpy.ndarray:
         """
         Find error regions by comparing original and reconstructed file bytes.
 
@@ -752,11 +775,11 @@ class RandomShuffleRepair(FileSpecificRepair):
         to identify error positions.
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Additional keyword arguments
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Additional keyword arguments (unused in this method)
 
         Returns:
-            Reshaped error matrix
+            Reshaped error matrix (numpy.ndarray of float32)
         """
         # calculate error_matrix by looking at the difference between the original and the reconstructed image
         start_pos = (1 if self.use_header_chunk else 0) * self.gepp.b.shape[1]
@@ -767,7 +790,9 @@ class RandomShuffleRepair(FileSpecificRepair):
                 pos_correct[i + start_pos] = diff
         return pos_correct.reshape(-1, self.gepp.b.shape[1])
 
-    def find_errors_tags(self, *args, **kwargs):
+    def find_errors_tags(
+        self, *args: Any, **kwargs: Unpack[PluginCallbackKwargs]
+    ) -> Dict[str, Any]:
         """
         Tag chunks based on error analysis.
 
@@ -775,18 +800,22 @@ class RandomShuffleRepair(FileSpecificRepair):
         or undecidable (-1).
 
         Args:
-            *args: Additional positional arguments
-            **kwargs: Keyword arguments containing optional chunk_tag
+            *args: Positional arguments from Dash callback (ignored)
+            **kwargs: Keyword arguments containing:
+                - chunk_tag: Optional chunk tag list. If not provided, initializes to zeros.
 
         Returns:
-            Dictionary with updated chunk_tag and refresh flags
+            Dictionary with updated chunk_tag and refresh flags:
+                - 'chunk_tag': Updated chunk tag list
+                - 'update_b': Whether to update GEPP b matrix
+                - 'refresh_view': Whether to refresh the view
         """
         if kwargs is None or kwargs.get("chunk_tag") is None:
             self.chunk_tag = np.zeros(self.gepp.b.shape[0], dtype=np.int32)
         else:
             self.chunk_tag = kwargs.get("chunk_tag")
         if self.error_matrix is None:
-            self.error_matrix = self.find_error_regions(*args, **kwargs)
+            self.error_matrix = self.find_error_regions()
         # for each row: count all entries != 0
         for i in range(len(self.error_matrix)):
             chunk_res = np.amax(self.error_matrix[i, :])
