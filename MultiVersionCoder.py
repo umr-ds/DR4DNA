@@ -140,18 +140,20 @@ def find_affected_chunks(
     """
     semiautomatic_solver.decoder.solve()
     # Get current file content from decoder
-    current_file_bytes = semiautomatic_solver.get_file_as_bytes()
+    current_file_bytes = semiautomatic_solver.get_file_as_bytes(include_padding=True)
 
     # For testing/development: create artificial changes if no new_file provided
     if new_file is None:
-        new_file = bytearray(current_file_bytes)
-        if len(new_file) > 500:
-            new_file[500] = 0x00
-            new_file[200] = 0x00
-            logger.warning("new_file was empty, creating artificial diff for testing")
+        #new_file = bytearray(current_file_bytes)
+        #if len(new_file) > 500:
+        #    new_file[500] = 0x00
+        #    new_file[200] = 0x00
+        logger.error("[!] new_file was empty - skipping!")
+        quit()
 
     # Validate file size - new file must not be larger than current
     if len(new_file) > len(current_file_bytes):
+        # TODO: implement diff /binarydiff format for this case!
         raise ValueError(
             f"New file ({len(new_file)} bytes) is larger than current file "
             f"({len(current_file_bytes)} bytes). File growth not yet supported."
@@ -179,7 +181,7 @@ def find_affected_chunks(
     semiautomatic_solver.decoder.GEPP.b[-1][
         semiautomatic_solver.decoder.headerChunk.get_last_chunk_length() :
     ] = 0
-    diff = semiautomatic_solver.decoder.GEPP.b[1:] - new_array
+    diff = np.bitwise_xor(semiautomatic_solver.decoder.GEPP.b[1:semiautomatic_solver.decoder.number_of_chunks], new_array)
     diff = np.vstack((np.zeros_like(diff[0]), diff))
     # Find indices of differing rows (chunks)
     differing_rows = np.nonzero(np.any(diff != 0, axis=1))[0]
@@ -274,6 +276,68 @@ def get_current_file_version(
                 logger.warning(f"Failed to parse version from sequence: {seq[:50]}...")
 
     return res
+
+
+def combine_fasta_files(fasta_paths: List[Union[str, Path]], output_path: Union[str, Path]) -> int:
+    """
+    Combine multiple FASTA files into a single output file.
+
+    This function reads multiple FASTA files and merges all sequences into
+    a single output FASTA file. Sequence IDs are preserved but made unique
+    by appending a suffix if duplicates are found.
+
+    Args:
+        fasta_paths: List of paths to FASTA files to combine
+        output_path: Path to the output combined FASTA file
+
+    Returns:
+        Total number of sequences written to the output file
+
+    Example:
+        >>> total = combine_fasta_files(
+        ...     ["existing.fasta", "new_packets.fasta"],
+        ...     "combined.fasta"
+        ... )
+        >>> print(f"Combined {total} sequences")
+    """
+    output_path = Path(output_path)
+    all_sequences: Dict[str, str] = {}
+    total_sequences = 0
+
+    for fasta_path in fasta_paths:
+        fasta_path = Path(fasta_path)
+        if not fasta_path.exists():
+            logger.warning(f"FASTA file not found: {fasta_path}, skipping...")
+            continue
+
+        fasta_entries = load_fasta(str(fasta_path))
+        logger.info(f"Loaded {len(fasta_entries)} sequences from {fasta_path.name}")
+
+        for seq_id, seq_data in fasta_entries.items():
+            # Ensure unique IDs
+            original_id = seq_id
+            counter = 1
+            while seq_id in all_sequences:
+                # Split ID to handle multiple suffixes
+                if '_' in original_id:
+                    base_id = '_'.join(original_id.rsplit('_', 1)[:-1])
+                else:
+                    base_id = original_id
+                seq_id = f"{base_id}_{counter}"
+                counter += 1
+
+            all_sequences[seq_id] = seq_data
+            total_sequences += 1
+
+    # Write combined FASTA
+    logger.info(f"Writing {total_sequences} sequences to {output_path.name}...")
+    with open(output_path, 'w') as f:
+        for seq_id, seq_data in all_sequences.items():
+            f.write(f">{seq_id}\n")
+            f.write(f"{seq_data}\n")
+
+    logger.info(f"✓ Combined FASTA written: {output_path.absolute()}")
+    return total_sequences
 
 
 def insert_dna_version_string(
@@ -986,12 +1050,12 @@ def generate_new_packets(
                     if changed_chunk not in res:
                         res[changed_chunk] = []
                     res[changed_chunk].append(new_pack)
-                    logger.info(
+                    logger.debug(
                         f"Generated packet with error probability {new_pack.error_prob} "
                         f"for chunk {changed_chunk}."
                     )
                 else:
-                    logger.warning(
+                    logger.debug(
                         f"Skipping packet with error probability {new_pack.error_prob} "
                         f"for chunk {changed_chunk}!"
                     )
@@ -1008,13 +1072,13 @@ def generate_new_packets(
                     if changed_chunk not in res:
                         res[changed_chunk] = []
                     res[changed_chunk].append(new_pack_pair)
-                    logger.info(
+                    logger.debug(
                         f"Generated packet pair with error probability "
                         f"{(new_pack_pair[0].error_prob, new_pack_pair[1].error_prob)} "
                         f"for chunk {changed_chunk}!"
                     )
                 else:
-                    logger.warning(
+                    logger.debug(
                         f"Skipping packet pair with error probability "
                         f"{(new_pack_pair[0].error_prob, new_pack_pair[1].error_prob)} "
                         f"for chunk {changed_chunk}!"
@@ -1542,14 +1606,13 @@ class MultiVersionCoder:
         logger.info(f"✓ FASTA file written: {output_path.absolute()}")
 
         logger.info("Saving configuration file...")
-        self.encoder.save_config_file(add_dot_fasta=True)
-        config_path = output_path.with_suffix(".ini")
-        logger.info(f"✓ Configuration file written: {config_path.absolute()}")
+        config_path = self.encoder.save_config_file(add_dot_fasta=True)
+        logger.info(f"✓ Configuration file written: {config_path}")
 
         # Get file sizes
         try:
             fasta_size = output_path.stat().st_size
-            config_size = config_path.stat().st_size
+            config_size = Path(config_path).stat().st_size
             logger.info(
                 f"FASTA file size: {fasta_size:,} bytes ({fasta_size / 1024 / 1024:.2f} MB)"
             )
@@ -1560,7 +1623,7 @@ class MultiVersionCoder:
         logger.info("-" * 80)
         logger.info("✓ Updated pool saved successfully!")
         logger.info(f"  FASTA: {output_path.absolute()}")
-        logger.info(f"  Config: {config_path.absolute()}")
+        logger.info(f"  Config: {config_path}")
         logger.info("=" * 80)
 
     def add_packets_to_pool(self, packets: Union[Set[RU10Packet], List[RU10Packet]]) -> None:
@@ -1582,6 +1645,124 @@ class MultiVersionCoder:
             self.encoder.encodedPackets |= packets
 
         logger.info(f"Added {len(packets)} packets to pool")
+
+    def combine_existing_fasta_with_packets(
+        self,
+        existing_fasta_path: Union[str, Path],
+        packets: Union[Set[RU10Packet], List[RU10Packet]],
+        output_fasta_path: Union[str, Path],
+        output_config_path: Optional[Union[str, Path]] = None,
+    ) -> Tuple[int, int]:
+        """
+        Combine an existing FASTA file with newly generated packets.
+
+        This method reads an existing FASTA file (e.g., from a previous version),
+        combines it with newly generated packets, and saves the result to a new
+        output file. This is useful when you want to preserve all previously
+        generated sequences while adding new ones for updated content.
+
+        Args:
+            existing_fasta_path: Path to the existing FASTA file to use as base
+            packets: Set or list of new RU10Packet objects to add
+            output_fasta_path: Path to save the combined FASTA file
+            output_config_path: Optional path to save the config file.
+                If None, config is saved next to output_fasta with .ini extension.
+
+        Returns:
+            Tuple of (existing_sequence_count, new_packet_count, config_path)
+
+        Raises:
+            FileNotFoundError: If existing_fasta_path doesn't exist
+            ValueError: If packets list is empty
+
+        Example:
+            >>> existing_count, new_count, config_path = coder.combine_existing_fasta_with_packets(
+            ...     "pool_v1.fasta",
+            ...     new_packets,
+            ...     "pool_v2_combined.fasta"
+            ... )
+            >>> print(f"Combined {existing_count} existing + {new_count} new sequences")
+            >>> print(f"Config saved at: {config_path}")
+        """
+        existing_fasta_path = Path(existing_fasta_path)
+        output_fasta_path = Path(output_fasta_path)
+
+        if not existing_fasta_path.exists():
+            raise FileNotFoundError(f"Existing FASTA file not found: {existing_fasta_path}")
+
+        if not packets:
+            raise ValueError("No packets provided to add")
+
+        # Convert packets to list if it's a set
+        if isinstance(packets, set):
+            packets = list(packets)
+
+        logger.info("=" * 80)
+        logger.info("Combining existing FASTA with new packets...")
+        logger.info("=" * 80)
+        logger.info(f"Existing FASTA: {existing_fasta_path.absolute()}")
+        logger.info(f"New packets to add: {len(packets)}")
+        logger.info(f"Output FASTA: {output_fasta_path.absolute()}")
+
+        # Create temporary FASTA file with new packets
+        temp_new_fasta = output_fasta_path.parent / f"temp_new_packets_{output_fasta_path.name}"
+        logger.info(f"Writing {len(packets)} new packets to temporary file...")
+        with open(temp_new_fasta, 'w') as f:
+            for packet in packets:
+                f.write(f">{packet.id}\n")
+                f.write(f"{packet.dna_data}\n")
+
+        try:
+            # Combine existing and new FASTA files
+            total_sequences = combine_fasta_files(
+                [existing_fasta_path, temp_new_fasta],
+                output_fasta_path
+            )
+
+            # Save config file
+            if output_config_path is None:
+                output_config_path = output_fasta_path.with_suffix(".ini")
+
+            # Create a temporary encoder to save config if needed
+            if self.encoder is None:
+                self.encoder = encoder_from_decoder(self.solver, self.config, rules=FastDNARules())
+
+            # Update encoder file path for config
+            file_bkp = self.encoder.file
+            self.encoder.file = str(output_fasta_path.with_suffix(""))
+            self.encoder.out_file = output_fasta_path.with_suffix("")
+            config_path = self.encoder.save_config_file(add_dot_fasta=True)
+            self.encoder.file = file_bkp
+
+            logger.info(f"✓ Configuration file written: {config_path}")
+
+            # Get file sizes
+            try:
+                output_size = output_fasta_path.stat().st_size
+                config_size = Path(config_path).stat().st_size
+                logger.info("-" * 80)
+                logger.info("File Sizes:")
+                logger.info(
+                    f"  Combined FASTA: {output_size:,} bytes ({output_size / 1024 / 1024:.2f} MB)"
+                )
+                logger.info(f"  Config file: {config_size:,} bytes")
+            except Exception as e:
+                logger.debug(f"Could not get file sizes: {e}")
+
+            logger.info("=" * 80)
+            logger.info("✓ FASTA combination completed successfully!")
+            logger.info(f"  Total sequences: {total_sequences}")
+            logger.info(f"  Existing sequences: {total_sequences - len(packets)}")
+            logger.info(f"  New sequences: {len(packets)}")
+            logger.info("=" * 80)
+
+            return total_sequences - len(packets), len(packets), config_path
+
+        finally:
+            # Clean up temporary file
+            if temp_new_fasta.exists():
+                temp_new_fasta.unlink()
+                logger.debug(f"Cleaned up temporary file: {temp_new_fasta}")
 
 
 # ============================================================================
@@ -1624,6 +1805,14 @@ def init_args() -> argparse.Namespace:
         default=5,
         help="Maximum number of packets to add for each changed chunk",
     )
+    parser.add_argument(
+        "--output",
+        metavar="output",
+        type=str,
+        help="Optional: Output base path (without extension). "
+             "If not provided, output will be saved in the same directory as the INI file.",
+        default=None,
+    )
 
     return parser.parse_args()
 
@@ -1651,6 +1840,7 @@ def main() -> None:
     ini_file = parsed_args.ini
     new_file_path = parsed_args.new_file
     packet_add_limit = parsed_args.packet_add_limit
+    output_base_path = parsed_args.output
 
     logger.info("=" * 80)
     logger.info("MultiVersionCoder CLI - DNA File Update Encoder")
@@ -1658,6 +1848,8 @@ def main() -> None:
     logger.info(f"Configuration file: {ini_file}")
     logger.info(f"New file: {new_file_path}")
     logger.info(f"Packet limit per chunk: {packet_add_limit}")
+    if output_base_path:
+        logger.info(f"Output base path: {output_base_path}")
     logger.info("-" * 80)
 
     # Load configuration
@@ -1717,11 +1909,11 @@ def main() -> None:
         # Decode base version (v0)
         logger.info("Decoding base version (v0)...")
         mv_decoder.decode_base_version("GAGCCAGTGAGTCGTA")
-        logger.info("✓ Base version decoded")
+        #logger.info("✓ Base version decoded")
 
         # Decode each subsequent version
         for version in range(1, current_version + 1):
-            logger.info(f"Decoding version {version}/{current_version}...")
+            #logger.info(f"Decoding version {version}/{current_version}...")
             try:
                 decoded_version = mv_decoder.decode_to_version("GAGCCAGTGAGTCGTA", version)
                 logger.info(f"✓ Version {version} decoded successfully")
@@ -1798,35 +1990,58 @@ def main() -> None:
     logger.info(f"  Total packets in encoder: {len(encoder.encodedPackets)}")
     logger.info("-" * 80)
 
-    # Save updated FASTA and config
-    # Get the directory of the INI file to use as output directory
-    ini_dir = Path(ini_file).parent.absolute()
-    base_filename = Path(semiautomatic_solver.decoder.file).stem  # filename without .fasta
-    out_file = ini_dir / f"{base_filename}_v{new_file_version}"
-    out_file = Path(out_file).absolute()
+    # Determine output path
+    if output_base_path:
+        out_file = Path(output_base_path).absolute()
+    else:
+        # Get the directory of the INI file to use as output directory
+        ini_dir = Path(ini_file).parent.absolute()
+        base_filename = Path(semiautomatic_solver.decoder.file).stem  # filename without .fasta
+        out_file = ini_dir / f"{base_filename}_v{new_file_version}"
+        out_file = Path(out_file).absolute()
 
-    logger.info(f"Output directory: {ini_dir}")
+    logger.info(f"Output directory: {out_file.parent}")
     logger.info(f"Output base path: {out_file}*.fasta / *.ini")
 
     logger.info("=" * 80)
     logger.info("Saving output files...")
     logger.info("=" * 80)
 
-    file_bkp = encoder.file
-    encoder.file = str(out_file)
-    encoder.save_packets_fasta(str(out_file), "", False)
-    encoder.out_file = out_file
-    encoder.save_config_file(add_dot_fasta=True)
-    encoder.file = file_bkp
+    # Use the combine functionality
+    logger.info("Combining existing FASTA with new packets...")
+    coder = MultiVersionCoder(cfg_worker)
+    coder.encoder = encoder
 
-    # Get absolute paths for output files
+    existing_count, new_count, config_output = coder.combine_existing_fasta_with_packets(
+        semiautomatic_solver.decoder.file,
+        added_packets,
+        out_file.with_suffix(".fasta"),
+        out_file.with_suffix(".ini")
+    )
+
     fasta_output = out_file.with_suffix(".fasta")
-    config_output = out_file.with_suffix(".ini")
 
-    logger.info("✓ Output files saved:")
-    logger.info(f"  FASTA file (all versions): {fasta_output}")
+    logger.info("✓ Output files saved (combined):")
+    logger.info(f"  FASTA file (combined): {fasta_output}")
     logger.info(f"  Config file: {config_output}")
+    logger.info(f"  Existing sequences: {existing_count}")
+    logger.info(f"  New sequences: {new_count}")
+    #else:
+    """
+        # Save all packets (standard mode)
+        file_bkp = encoder.file
+        encoder.file = str(out_file)
+        encoder.save_packets_fasta(str(out_file), "", False)
+        encoder.out_file = out_file
+        config_output = encoder.save_config_file(add_dot_fasta=True)
+        encoder.file = file_bkp
 
+        fasta_output = out_file.with_suffix(".fasta")
+
+        logger.info("✓ Output files saved:")
+        logger.info(f"  FASTA file (all versions): {fasta_output}")
+        logger.info(f"  Config file: {config_output}")
+    """
     # Save added packets to debug file - in same directory as output files
     debug_outfile = out_file.with_suffix(".added_packets.fasta")
     with open(debug_outfile, "w") as f:
@@ -1834,7 +2049,7 @@ def main() -> None:
             f.write(f">{packet.id}\n")
             f.write(f"{packet.dna_data}\n")
 
-    logger.info(f"  Added packets (debug): {debug_outfile}")
+    logger.info(f"  Sequences generated for this version: {debug_outfile}")
 
     # Get file sizes
     try:

@@ -51,7 +51,7 @@ from pathlib import Path
 
 import numpy as np
 
-from MultiVersionCoder import reduce_packet_to_chunk
+from MultiVersionCoder import reduce_packet_to_chunk, get_current_file_version
 from NOREC4DNA.ConfigWorker import ConfigReadAndExecute
 from NOREC4DNA.invivo_window_decoder import load_fasta
 from NOREC4DNA.norec4dna.HeaderChunk import HeaderChunk
@@ -112,8 +112,8 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         self.initial_A = self.decoder.GEPP.A.copy()
         self.initial_b = self.decoder.GEPP.b.copy()
         self.initial_packet_mapping: typing.Optional[dict] = None
-        self.multi_error_packets_mode = False
-
+        self.multi_error_packets_mode: bool = False
+        self.fasta_entries:typing.Optional[typing.Dict[str,str]] = None
         if metadata_list is None:
             self.metadata_list: typing.List[str] = []
         else:
@@ -287,6 +287,8 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 iden = np.identity(self.decoder.number_of_chunks)
                 self.decoder.GEPP.A = iden
                 self.decoder.GEPP.b = np.array(res, dtype=np.uint8)
+                # TODO: add a packet (e.g. a new version packet to populate all variables
+                #  (number of chunks, AUX packets, ...):
                 self.decoder.input_new_packet()
 
                 logger.info("Base version loaded successfully from file")
@@ -302,12 +304,12 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
         self.decoder = type(self.decoder).from_config_map(self.decoder.config_map)
 
         # Load all FASTA entries
-        fasta_entries = load_fasta(self.decoder.file)
+        self.fasta_entries = load_fasta(self.decoder.file)
 
         # Filter out sequences containing metadata or version strings
         fasta_seqs = [
             seq
-            for seq in fasta_entries.values()
+            for seq in self.fasta_entries.values()
             if not self.contains_metadata(seq, self.metadata_list)
             and not self.contains_metadata(seq, [base_dna_version_string])
         ]
@@ -409,6 +411,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
 
         # Process each version iteratively
         for i in range(1, version + 1):
+            b_prev_version = self.decoder.GEPP.b.copy()
             logger.info(f"Decoding version {i}/{version}...")
 
             version_seqs = self.get_sequences_for_version(base_dna_version_string, i)
@@ -459,7 +462,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 # using the diff between old and new version allows us to use any chunk as a comparison base
                 # and not only the header chunk:
                 diff_to_last_version = xor_numpy(
-                    np.frombuffer(reduced.data, np.uint8), self.decoder.GEPP.b[used_chunks_list[0]]
+                    np.frombuffer(reduced.data, np.uint8), b_prev_version[used_chunks_list[0]]
                 )
                 mask_start = offset_pos - len(bin_dna_version_str) - 1
                 mask_end = offset_pos + 1
@@ -467,7 +470,11 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 if mask_start >= 0 and mask_end <= len(reduced.data):
                     zeros_mask[mask_start:mask_end] = 255
                 masked_diff_to_last_version = diff_to_last_version & zeros_mask
-                # XOR to revert changed  the packet data
+
+                # TODO: we MAY simply apply this diff to b[used_chunks_list[target_chunk]] (unless it is a split packet)
+                content_only_diff_to_last_version = diff_to_last_version & ((zeros_mask + 1) * 255)
+                new_content = xor_numpy(self.decoder.GEPP.b[used_chunks_list[target_chunk]], content_only_diff_to_last_version)
+                # XOR to revert changed the packet data
                 repaired_data = xor_numpy(packet.data, masked_diff_to_last_version)
 
                 # Create repaired packet
@@ -492,6 +499,7 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 reduced_packet = reduce_packet_to_chunk(
                     res.copy(), self, used_chunks_list[target_chunk]
                 )
+                assert all(reduced_packet.data == new_content)
                 solved_chunks[used_chunks_list[target_chunk]].append(reduced_packet)
 
             # Combine data for chunks with multiple solutions
@@ -502,13 +510,13 @@ class MultiVersionDecoder(SemiAutomaticReconstructionToolkit):
                 unique_data_parts = {bytes(v.data) for v in values}
 
                 # XOR differences with original version
-                tmp = np.zeros_like(self.decoder.GEPP.b[key], dtype=np.uint8)
+                tmp = np.zeros_like(b_prev_version[key], dtype=np.uint8)
                 for part in unique_data_parts:
-                    tmp = xor_numpy(tmp, xor_numpy(part, self.decoder.GEPP.b[key]))
+                    tmp = xor_numpy(tmp, xor_numpy(part, b_prev_version[key]))
 
                 # Create insertion packet
                 insertion_packet = values[0].copy()
-                insertion_packet.data = xor_numpy(tmp, self.decoder.GEPP.b[key])
+                insertion_packet.data = xor_numpy(tmp, b_prev_version[key])
                 self.decoder.packets.append(insertion_packet)
                 self.decoder.GEPP.b[key] = insertion_packet.data
 
@@ -741,9 +749,14 @@ def main() -> None:
     logger.info("Decoding base version...")
     mv_decoder.decode_base_version(BASE_VERSION_STRING)
 
-    # Decode to version 1
-    logger.info("Decoding version 1...")
-    mv_decoder.decode_to_version(BASE_VERSION_STRING, 1)
+    current_version = get_current_file_version(mv_decoder)
+
+    ## Decode to version 1
+    #logger.info("Decoding version 1...")
+    #mv_decoder.decode_to_version(BASE_VERSION_STRING, 1)
+
+    logger.info(f"Decoding up to version {current_version}...")
+    mv_decoder.decode_to_version(BASE_VERSION_STRING, current_version)
 
     logger.info("Decoding complete!")
 
